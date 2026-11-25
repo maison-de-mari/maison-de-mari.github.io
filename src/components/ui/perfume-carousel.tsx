@@ -22,14 +22,15 @@ const TG = "https://t.me/Maisondemari";
 const EASE = [0.22, 1, 0.36, 1] as const;
 const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
 
-/** Флаконы, у которых уже есть 3D-модель (Higgsfield Tripo H3.1 + этикетка из фото). Остальные — картинки. */
-const MODELS: Record<string, BottleModel> = {
-  "zielinski-rozen-tobacco-cedarwood-pepper": {
-    src: `${BASE}/models/zielinski-tobacco-hunyuan.glb`,
-    front: `${BASE}/models/zielinski-tobacco-front.webp`,
-  },
-  "bleu-de-chanel-parfum": { src: `${BASE}/models/bleu-de-chanel-tripo.glb`, front: `${BASE}/models/bleu-de-chanel-front.webp` },
-};
+/**
+ * 3D-модель каждого флакона (Higgsfield Hunyuan3D / Tripo) + фото анфас для этикетки + карта материалов
+ * (стекло, металл, бумага). Пока модель грузится или если не загрузилась — на её месте картинка.
+ */
+const modelOf = (slug: string): BottleModel => ({
+  src: `${BASE}/models/${slug}.glb`,
+  front: `${BASE}/models/${slug}-front.webp`,
+  mask: `${BASE}/models/${slug}-mask.png`,
+});
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
@@ -75,7 +76,7 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
             el,
             images,
             events,
-            items.map((a) => MODELS[a.slug] ?? null),
+            items.map((a) => modelOf(a.slug)),
           );
     ring.current = r;
     return () => {

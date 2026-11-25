@@ -1,11 +1,11 @@
 import * as THREE from "three";
 
 /**
- * Настоящая этикетка на сгенерированной 3D-модели.
- * Image-to-3D хорошо угадывает форму и материал флакона, но надписи выходят кашей.
- * Поэтому: 1) находим, какой стороной модель смотрит «как на фото» (перебор поворотов
- * и сравнение с фото), 2) проецируем фото спереди на лицевую сторону, а сзади кладём
- * сильно размытое фото — цвет стекла без выдуманных зеркальных букв. Бока остаются от модели.
+ * Настоящая этикетка и настоящие материалы на сгенерированной 3D-модели.
+ * Image-to-3D хорошо угадывает форму флакона, но надписи выходят кашей, а материал — одним куском.
+ * Поэтому: 1) находим, какой стороной модель смотрит «как на фото» (перебор поворотов и сравнение с фото),
+ * 2) проецируем фото на переднюю половину, на бока и спину — цвет края флакона (без выдуманных букв),
+ * 3) по карте материалов (разметка по фото) у каждой точки свой материал: стекло, металл, бумага, лак.
  */
 
 const W = 40;
@@ -125,20 +125,49 @@ export function alignToPhoto(renderer: THREE.WebGLRenderer, model: THREE.Object3
   return best;
 }
 
+/** Материал под стекло: физический, с пропусканием света (сколько именно — решает карта в шейдере) */
+export function glassMaterial(src: THREE.Material, envMapIntensity: number, envMap?: THREE.Texture) {
+  const s = src as THREE.MeshStandardMaterial;
+  return new THREE.MeshPhysicalMaterial({
+    envMap: envMap ?? null,
+    map: s.map,
+    normalMap: s.normalMap,
+    normalScale: s.normalScale,
+    roughnessMap: s.roughnessMap,
+    metalnessMap: s.metalnessMap,
+    color: s.color,
+    roughness: s.roughness,
+    metalness: s.metalness,
+    transmission: 1,
+    thickness: 0.28,
+    ior: 1.5,
+    attenuationDistance: 1.2,
+    attenuationColor: new THREE.Color("#fff6ea"),
+    specularIntensity: 1,
+    clearcoat: 1,
+    clearcoatRoughness: 0.03,
+    envMapIntensity,
+  });
+}
+
+export type ProjectOptions = {
+  /** объект, вместе с которым модель потом двигается (в витрине — её стойка на кольце) */
+  frame?: THREE.Object3D;
+  /** зеркальная копия для отражения в лаке: гаснет книзу */
+  reflect?: boolean;
+  /** карта материалов того же кадра, что фото: R — стекло, G — металл, B — шероховатое (бумага, мат, ткань) */
+  mask?: THREE.Texture;
+};
+
 /**
  * Проецирует фото на лицевую сторону модели (после alignToPhoto). mix: 0 — как сгенерировано, 1 — с фото.
- * frame — объект, вместе с которым модель потом двигается (в витрине — её стойка на кольце):
- * проекция считается в его системе координат, поэтому этикетка едет вместе с флаконом.
- * В момент вызова frame должен стоять в начале координат без поворота.
+ * Проекция считается в системе координат frame, поэтому этикетка едет вместе с флаконом;
+ * в момент вызова frame должен стоять в начале координат без поворота.
+ * С картой материалов каждая точка получает свой материал: стекло пропускает и преломляет свет
+ * (нужен glassMaterial), металл отражает, бумага матовая.
  */
-export function projectPhoto(
-  model: THREE.Object3D,
-  img: HTMLImageElement,
-  tex: THREE.Texture,
-  frame?: THREE.Object3D,
-  /** зеркальная копия для отражения: гаснет книзу */
-  reflect = false,
-) {
+export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: THREE.Texture, opts: ProjectOptions = {}) {
+  const { frame, reflect = false, mask } = opts;
   const { uv } = photoPixels(img);
   model.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(model, true);
@@ -148,7 +177,12 @@ export function projectPhoto(
   const mix = { value: 1 };
   const dim = { value: 1 };
   const toFrame = { value: new THREE.Matrix4() };
-  const shaders: { uniforms: Record<string, THREE.IUniform> }[] = [];
+
+  // своя прозрачность у каждой точки: доля стекла из карты
+  const transmission = THREE.ShaderChunk.transmission_fragment.replace(
+    "material.transmission = transmission;",
+    "material.transmission = transmission * glassM;",
+  );
 
   model.traverse((o) => {
     const m = o as THREE.Mesh;
@@ -156,6 +190,8 @@ export function projectPhoto(
     (Array.isArray(m.material) ? m.material : [m.material]).forEach((mat) => {
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uFront = { value: tex };
+        sh.uniforms.uMask = { value: mask ?? tex };
+        sh.uniforms.uHasMask = { value: mask ? 1 : 0 };
         sh.uniforms.uBox = { value: box };
         sh.uniforms.uUv = { value: uv };
         sh.uniforms.uMix = mix;
@@ -164,7 +200,6 @@ export function projectPhoto(
         sh.uniforms.uReflect = { value: reflect ? 1 : 0 };
         sh.uniforms.uDepth = { value: depth };
         sh.uniforms.uTexH = { value: img.naturalHeight * uv.w };
-        shaders.push(sh);
         sh.vertexShader = sh.vertexShader
           .replace("#include <common>", "#include <common>\nuniform mat4 uToFrame;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;")
           .replace(
@@ -174,7 +209,21 @@ export function projectPhoto(
         sh.fragmentShader = sh.fragmentShader
           .replace(
             "#include <common>",
-            "#include <common>\nuniform sampler2D uFront;\nuniform vec4 uBox;\nuniform vec4 uUv;\nuniform float uMix;\nuniform float uDim;\nuniform float uReflect;\nuniform vec2 uDepth;\nuniform float uTexH;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;",
+            [
+              "#include <common>",
+              "uniform sampler2D uFront;",
+              "uniform sampler2D uMask;",
+              "uniform float uHasMask;",
+              "uniform vec4 uBox;",
+              "uniform vec4 uUv;",
+              "uniform float uMix;",
+              "uniform float uDim;",
+              "uniform float uReflect;",
+              "uniform vec2 uDepth;",
+              "uniform float uTexH;",
+              "varying vec3 vWPos;",
+              "varying vec3 vWNrm;",
+            ].join("\n"),
           )
           .replace(
             "#include <map_fragment>",
@@ -190,7 +239,8 @@ export function projectPhoto(
             // автоматический выбор взял бы самый размытый уровень, и там выпадали бы буквы
             float dy = max(abs(dFdx(fb.y)), abs(dFdy(fb.y)));
             float lod = max(0.0, log2(dy * uTexH));
-            vec4 pf = textureLod(uFront, uUv.xy + fb * uUv.zw, lod);
+            vec2 fuv = uUv.xy + fb * uUv.zw;
+            vec4 pf = textureLod(uFront, fuv, lod);
             float photoW = wf * pf.a;
             // бока и спина — цвет КРАЯ флакона на этой высоте (стекло, жидкость, крышка), а не этикетки:
             // этикетка не «оборачивается» вокруг флакона, и никакие буквы — ни свои, ни выдуманные — не проступают
@@ -198,26 +248,42 @@ export function projectPhoto(
             int L = -1;
             int Rr = -1;
             for (int k = 0; k < 31; k++) {
-              smp[k] = texture2D(uFront, uUv.xy + vec2((float(k) + 0.5) / 31.0, fb.y) * uUv.zw, 2.0);
+              smp[k] = texture2D(uFront, uUv.xy + vec2((float(k) + 0.5) / 31.0, fb.y) * uUv.zw, 4.0);
               if (smp[k].a > 0.6) { if (L < 0) L = k; Rr = k; }
             }
             vec3 band = vec3(0.0);
             float ba = 0.0;
+            vec2 edgeUv = fuv;
             if (L >= 0) {
               int l1 = min(L + 1, Rr);
               int r1 = max(Rr - 1, L);
               band = (smp[l1].rgb + smp[min(l1 + 1, Rr)].rgb + smp[r1].rgb + smp[max(r1 - 1, L)].rgb) * 0.25;
               ba = 1.0;
+              edgeUv = uUv.xy + vec2((float(l1) + 1.0) / 31.0, fb.y) * uUv.zw;
             }
             float restW = (1.0 - wf) * uMix * ba;
             diffuseColor.rgb = mix(diffuseColor.rgb, band * 0.78, restW);
             diffuseColor.rgb = mix(diffuseColor.rgb, pf.rgb, photoW);
-            float cleanW = max(photoW, restW);`,
+            float cleanW = max(photoW, restW);
+            // материал точки: спереди — из карты в той же точке, на боках и сзади — с края флакона
+            vec3 mk = mix(texture2D(uMask, edgeUv).rgb, texture2D(uMask, fuv).rgb, wf) * uHasMask * cleanW;
+            float glassM = mk.r;
+            float metalM = mk.g;
+            float roughM = mk.b;`,
           )
           .replace(
             "#include <metalnessmap_fragment>",
-            // буквы-каша сидят и в картах металла/шероховатости: там, где фото, делаем гладкое стекло
-            "#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.0, cleanW);\nroughnessFactor = mix(roughnessFactor, 0.14, cleanW);",
+            // буквы-каша сидят и в картах металла/шероховатости: там, где фото, ставим свои значения
+            `#include <metalnessmap_fragment>
+            metalnessFactor = mix(metalnessFactor, 0.0, cleanW);
+            roughnessFactor = mix(roughnessFactor, 0.14, cleanW);
+            if (uHasMask > 0.5) {
+              // стекло и лак — зеркально гладкие, металл — чуть мягче, бумага и мат — шероховатые
+              roughnessFactor = mix(roughnessFactor, 0.035, cleanW * clamp(1.0 - metalM - roughM, 0.0, 1.0));
+              metalnessFactor = mix(metalnessFactor, 1.0, metalM);
+              roughnessFactor = mix(roughnessFactor, 0.2, metalM);
+              roughnessFactor = mix(roughnessFactor, 0.62, roughM);
+            }`,
           )
           .replace(
             "#include <normal_fragment_maps>",
@@ -225,11 +291,17 @@ export function projectPhoto(
             "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, cleanW));",
           )
           .replace(
+            "#include <lights_physical_fragment>",
+            // лаковый слой есть у стекла и лака, но не у бумаги и не у металла
+            "#include <lights_physical_fragment>\n#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= 1.0 - clamp(roughM + metalM, 0.0, 1.0);\n#endif",
+          )
+          .replace("#include <transmission_fragment>", transmission)
+          .replace(
             "#include <opaque_fragment>",
             `#include <opaque_fragment>
-            // на фото свет уже есть: спереди почти не пересвечиваем его светом сцены,
-            // иначе проступает рельеф выдуманных букв, вылепленных в самой модели
-            gl_FragColor.rgb = mix(gl_FragColor.rgb, pf.rgb, photoW * 0.85);
+            // на фото свет уже есть: на бумаге и непрозрачных частях почти не пересвечиваем его светом сцены
+            // (иначе проступает рельеф выдуманных букв); стекло же — честное: блики, отражения, преломление
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, pf.rgb, photoW * mix(0.85, 0.4, glassM) * mix(1.0, 0.45, metalM));
             // затемнение: дальние флаконы на кольце и все остальные, когда выбран один
             gl_FragColor.rgb *= uDim;
             // отражение в лаке гаснет книзу (у зеркальной копии)

@@ -2,10 +2,10 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { alignToPhoto, projectPhoto } from "./label-projection";
+import { alignToPhoto, glassMaterial, projectPhoto } from "./label-projection";
 
-/** 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) */
-export type BottleModel = { src: string; front: string };
+/** 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) + карта материалов */
+export type BottleModel = { src: string; front: string; mask?: string };
 type Label = ReturnType<typeof projectPhoto>;
 
 /**
@@ -59,6 +59,29 @@ function radial(stops: [number, string][], size = 256) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+/**
+ * Окружение «предметной съёмки» для отражений на флаконах: тёмная студия, две высокие полосы
+ * софтбоксов по бокам, мягкий верхний свет и тёплый контровой свет сзади. Яркость > 1 — это HDR,
+ * PMREM её сохраняет, поэтому блики на стекле получаются яркими и чёткими.
+ */
+function studioScene() {
+  const s = new THREE.Scene();
+  const room = new THREE.Mesh(new THREE.BoxGeometry(14, 10, 14), new THREE.MeshBasicMaterial({ color: "#0b0806", side: THREE.BackSide }));
+  s.add(room);
+  const panel = (w: number, h: number, color: string, k: number, pos: [number, number, number], look: [number, number, number]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.set(...pos);
+    m.lookAt(...look);
+    s.add(m);
+  };
+  panel(0.7, 6, "#ffffff", 5, [-3.2, 0.5, 2.6], [0, 0.5, 0]); // левый софтбокс-полоса
+  panel(0.7, 6, "#ffffff", 4, [3.2, 0.5, 2.6], [0, 0.5, 0]); // правый
+  panel(5, 3, "#fff4e6", 2.2, [0, 4.6, 0.5], [0, 0, 0]); // мягкий верх
+  panel(6, 2.2, "#e7b46c", 3.5, [0, 1.2, -5], [0, 1, 0]); // тёплый контровой сзади
+  panel(10, 1.2, "#3a2a1c", 1, [0, -2.5, 3], [0, 0, 0]); // отсвет от подиума снизу
+  return s;
 }
 
 type Bottle = {
@@ -130,10 +153,14 @@ export class PerfumeRing {
     this.reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }));
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // стекло считает сцену дважды (второй раз — для преломления): на телефонах чуть ниже разрешение
+    const touch = window.matchMedia("(pointer: coarse)").matches;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.6 : 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
+    // стекло преломляет то, что за ним: этот кадр можно считать в половинном разрешении
+    r.transmissionResolutionScale = 0.5;
     const cv = r.domElement;
     cv.setAttribute("role", "img");
     cv.setAttribute("aria-label", "Круглая витрина ароматов: потяните в сторону, чтобы повернуть, нажмите на флакон, чтобы открыть");
@@ -144,7 +171,8 @@ export class PerfumeRing {
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = env;
     this.scene.environmentIntensity = 0.14;
-    this.disposables.push(pmrem, env);
+    this.studio = pmrem.fromScene(studioScene(), 0.02).texture;
+    this.disposables.push(pmrem, env, this.studio);
 
     this.buildStage();
     this.buildBottles(images);
@@ -344,8 +372,6 @@ export class PerfumeRing {
           mesh.visible = refl.visible = true;
           b.loaded = true;
           this.loaded();
-          const spec = this.models[i];
-          if (spec) this.loadModel(b, spec);
         },
         undefined,
         () => this.loaded(),
@@ -355,8 +381,28 @@ export class PerfumeRing {
 
   private gltf?: GLTFLoader;
   private disposed = false;
+  private studio!: THREE.Texture;
 
-  /** Ставит на место картинки настоящую 3D-модель с этикеткой из фото */
+  /**
+   * Модели грузятся после картинок, по нескольку за раз и начиная с тех, что ближе к зрителю:
+   * витрина видна сразу, а флаконы один за другим «оживают» в 3D.
+   */
+  private loadModels() {
+    const order = this.bottles
+      .map((b, i) => ({ b, i, spec: this.models[i] }))
+      .filter((x) => x.spec && x.b.loaded)
+      .sort((p, q) => Math.cos(q.i * this.step + this.ring) - Math.cos(p.i * this.step + this.ring));
+    let next = 0;
+    const run = async () => {
+      while (next < order.length && !this.disposed) {
+        const { b, spec } = order[next++];
+        await this.loadModel(b, spec!);
+      }
+    };
+    for (let k = 0; k < 3; k++) run();
+  }
+
+  /** Ставит на место картинки настоящую 3D-модель: этикетка из фото, стекло/металл/бумага по карте */
   private async loadModel(b: Bottle, spec: BottleModel) {
     if (!this.gltf) {
       this.gltf = new GLTFLoader();
@@ -365,11 +411,18 @@ export class PerfumeRing {
     try {
       const img = new Image();
       img.src = spec.front;
-      const [g, tex] = await Promise.all([this.gltf.loadAsync(spec.src), new THREE.TextureLoader().loadAsync(spec.front), img.decode()]);
+      const tl = new THREE.TextureLoader();
+      const [g, tex, mask] = await Promise.all([
+        this.gltf.loadAsync(spec.src),
+        tl.loadAsync(spec.front),
+        spec.mask ? tl.loadAsync(spec.mask) : Promise.resolve(undefined),
+        img.decode(),
+      ]);
       if (this.disposed) return; // витрину уже убрали, пока грузилась модель
       this.keep(tex);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      if (mask) this.keep(mask);
 
       const model = g.scene;
       const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
@@ -380,31 +433,37 @@ export class PerfumeRing {
       model.position.x -= c.x;
       model.position.z -= c.z;
       model.position.y -= box.min.y;
+      // окружение сцены приглушено ради лака подиума — моделям отражения нужны ярче
+      const ENV = 6;
       model.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
         this.keep(m.geometry);
-        (Array.isArray(m.material) ? m.material : [m.material]).forEach((x) => {
-          (x as THREE.MeshStandardMaterial).envMapIntensity = 6; // окружение сцены приглушено ради лака
-          this.keep(x);
-        });
+        const swap = (x: THREE.Material) => {
+          if (!mask) return this.keep(Object.assign(x, { envMapIntensity: ENV }));
+          x.dispose();
+          // стеклу и металлу — свет предметной съёмки: полосы софтбоксов дают узнаваемые блики по краям
+          return this.keep(glassMaterial(x, 1.6, this.studio));
+        };
+        m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material);
       });
 
       const pivot = new THREE.Object3D();
       pivot.add(model);
       pivot.updateMatrixWorld(true);
-      const label = projectPhoto(model, img, tex, pivot);
+      const label = projectPhoto(model, img, tex, { frame: pivot, mask });
 
-      // отражение в лаке: зеркальная копия со своими (полупрозрачными) материалами
+      // отражение в лаке: зеркальная копия со своими полупрозрачными материалами (без пропускания — дешевле)
       const copy = model.clone(true);
       copy.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
         const faint = (x: THREE.Material) => {
-          const y = this.keep(x.clone());
+          const y = this.keep(x.clone()) as THREE.MeshPhysicalMaterial;
           y.transparent = true;
           y.opacity = 0.16;
           y.depthWrite = false;
+          if ("transmission" in y) y.transmission = 0;
           return y;
         };
         m.material = Array.isArray(m.material) ? m.material.map(faint) : faint(m.material);
@@ -413,7 +472,7 @@ export class PerfumeRing {
       const mirror = new THREE.Object3D();
       mirror.add(copy);
       mirror.updateMatrixWorld(true);
-      const mirrorLabel = projectPhoto(copy, img, tex, mirror, true);
+      const mirrorLabel = projectPhoto(copy, img, tex, { frame: mirror, reflect: true, mask });
       mirror.scale.y = -1;
 
       b.group.add(pivot, mirror);
@@ -427,7 +486,10 @@ export class PerfumeRing {
   }
 
   private loaded() {
-    if (++this.loadedCount === this.n) this.ev.onReady();
+    if (++this.loadedCount === this.n) {
+      this.ev.onReady();
+      this.loadModels();
+    }
   }
 
   // ───────────────────────── раскладка камеры
