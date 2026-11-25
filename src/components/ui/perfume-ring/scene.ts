@@ -3,6 +3,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { alignToPhoto, glassMaterial, projectPhoto } from "./label-projection";
+import { buildSolid, type SolidSpec } from "./solid-bottle";
 
 /** 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) + карта материалов */
 export type BottleModel = { src: string; front: string; mask?: string };
@@ -101,6 +102,8 @@ type Bottle = {
   dim: number;
   shown: number;
   loaded: boolean;
+  /** объёмный флакон из той же картинки (вместо плоской) */
+  solid?: ReturnType<typeof buildSolid>;
   /** настоящая 3D-модель вместо плоской картинки (картинка остаётся невидимой — для кликов) */
   model?: {
     pivot: THREE.Object3D;
@@ -159,6 +162,7 @@ export class PerfumeRing {
     private ev: RingEvents,
     private models: (BottleModel | null)[] = [],
     private facing: "camera" | "outward" = "camera",
+    private solids: (SolidSpec | null)[] = [],
   ) {
     this.n = images.length;
     this.step = (Math.PI * 2) / this.n;
@@ -384,6 +388,14 @@ export class PerfumeRing {
           refl.material.uniforms.map.value = tex;
           mesh.visible = refl.visible = true;
           b.loaded = true;
+          const solidSpec = this.solids[i];
+          if (solidSpec) {
+            const sb = buildSolid(img, tex, h, solidSpec);
+            this.disposables.push(sb);
+            sb.mesh.userData.index = i;
+            b.group.add(sb.mesh);
+            b.solid = sb;
+          }
           this.loaded();
         },
         undefined,
@@ -577,7 +589,7 @@ export class PerfumeRing {
     this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.ray.setFromCamera(this.ndc, this.camera);
     const hits = this.ray.intersectObjects(
-      this.bottles.filter((b) => b.loaded).map((b) => b.mesh),
+      this.bottles.filter((b) => b.loaded).map((b) => b.solid?.mesh ?? b.mesh),
       false,
     );
     // ближайший к зрителю флакон, если лучи задевают и дальний
@@ -761,7 +773,11 @@ export class PerfumeRing {
       b.refl.position.y = -b.lift;
       const op = (0.42 + 0.58 * k) * b.shown * (isSel ? 1 : 1 - f * 0.55);
       b.mesh.material.uniforms.uDim.value = b.dim;
-      b.mesh.material.uniforms.uOpacity.value = b.model ? 0 : op;
+      b.mesh.material.uniforms.uOpacity.value = b.model || b.solid ? 0 : op;
+      if (b.solid) {
+        b.solid.mesh.position.y = b.lift;
+        b.solid.setDim(b.dim * Math.min(1, op * 1.4));
+      }
       if (b.model) {
         // модель стоит лицом наружу кольца — на поворотах видно её бок;
         // выбранная медленно покачивается, показывая объём

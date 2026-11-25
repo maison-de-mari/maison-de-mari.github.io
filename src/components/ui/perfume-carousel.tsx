@@ -7,6 +7,7 @@ import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
+import type { SolidSpec } from "./perfume-ring/solid-bottle";
 import { CssRing } from "./perfume-ring/css-ring";
 
 /*
@@ -27,6 +28,37 @@ const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
  * 3D-модели (вариант со стеклом и жидкостью) сохранены в ветке variant-3d-glass — на сайте они лагали.
  */
 const photoSrc = (slug: string) => `${BASE}/models/${slug}-front.webp`;
+
+/**
+ * Объём каждого флакона: круглый — тело вращения по силуэту фото; плоский — силуэт нужной толщины
+ * (depth — толщина в долях ширины, как у настоящего флакона). Бока/верх/низ окрашиваются цветом флакона.
+ */
+const SHAPE: Record<string, SolidSpec> = {
+  "louis-vuitton-moon-tale": { kind: "round" },
+  "orto-parisi-boccanera": { kind: "flat", depth: 0.45 },
+  "maison-crivelli-cuir-infrarouge": { kind: "round" },
+  "creed-spring-flower": { kind: "flat", depth: 0.55 },
+  "versace-cedrat-de-diamante": { kind: "round" },
+  "gritti-tutu": { kind: "flat", depth: 0.9 },
+  "ysl-libre-berry-crush": { kind: "flat", depth: 0.42 },
+  "byredo-animalique": { kind: "round" },
+  "louis-vuitton-lv-lovers": { kind: "round" },
+  "bvlgari-le-gemme-tygar": { kind: "flat", depth: 0.6 },
+  "parfums-de-marly-althair": { kind: "flat", depth: 0.5 },
+  "reservation-riviera-californienne": { kind: "round" },
+  "phlur-vanilla-skin": { kind: "flat", depth: 0.62 },
+  "zielinski-rozen-tobacco-cedarwood-pepper": { kind: "round" },
+  "zielinski-rozen-bergamot-green-tea-sandalwood": { kind: "round" },
+  "essential-parfums-bois-imperial": { kind: "flat", depth: 0.55 },
+  "tom-ford-tobacco-vanille": { kind: "flat", depth: 0.55 },
+  "creed-wild-vetiver": { kind: "flat", depth: 0.55 },
+  "amouage-purpose-50": { kind: "flat", depth: 0.45 },
+  "penhaligons-halfeti-leather": { kind: "round" },
+  "hormone-paris-this-is-not-caffeine": { kind: "flat", depth: 0.45 },
+  "guerlain-nerolia-vetiver-set": { kind: "round" },
+  "mfk-724": { kind: "flat", depth: 0.6 },
+  "bleu-de-chanel-parfum": { kind: "flat", depth: 0.38 },
+};
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
@@ -75,6 +107,7 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
             events,
             [],
             "outward",
+            items.map((a) => SHAPE[a.slug] ?? null),
           );
     ring.current = r;
     return () => {
