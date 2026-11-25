@@ -7,22 +7,25 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { alignToPhoto, projectPhoto } from "./perfume-ring/label-projection";
 
 /**
  * Проба настоящих 3D-моделей флаконов (Higgsfield image-to-3D → GLB).
  * Модель стоит на маленьком лакированном подиуме, её можно крутить со всех сторон.
  */
 
-export type ModelEntry = { id: string; aroma: string; engine: string; src: string; photo: string; mb: number };
+/** front — фото флакона анфас на прозрачном фоне: им заменяем сгенерированную этикетку */
+export type ModelEntry = { id: string; aroma: string; engine: string; src: string; photo: string; front: string; mb: number };
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const GOLD = new THREE.Color("#d8b47a");
 
 export function ModelViewer({ models }: { models: ModelEntry[] }) {
   const host = useRef<HTMLDivElement>(null);
-  const api = useRef<{ show: (src: string) => void } | null>(null);
+  const api = useRef<{ show: (src: string, front: string) => void; setMix: (v: number) => void } | null>(null);
   const [cur, setCur] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [real, setReal] = useState(true);
 
   useEffect(() => {
     const el = host.current!;
@@ -77,12 +80,24 @@ export function ModelViewer({ models }: { models: ModelEntry[] }) {
     loader.setMeshoptDecoder(MeshoptDecoder);
     let model: THREE.Object3D | null = null;
     let token = 0;
-    const show = (src: string) => {
+    let label: { setMix: (v: number) => void } | null = null;
+    let mixNow = 1;
+    const texLoader = new THREE.TextureLoader();
+    const loadImg = (src: string) =>
+      new Promise<HTMLImageElement>((ok, fail) => {
+        const im = new Image();
+        im.onload = () => ok(im);
+        im.onerror = fail;
+        im.src = src;
+      });
+    const show = (src: string, front: string) => {
       const my = ++token;
       setLoading(true);
+      const photo = Promise.all([loadImg(front), texLoader.loadAsync(front)]);
       loader.load(
         src,
-        (g) => {
+        async (g) => {
+          const [img, tex] = await photo;
           if (my !== token) return;
           if (model) {
             scene.remove(model);
@@ -93,11 +108,12 @@ export function ModelViewer({ models }: { models: ModelEntry[] }) {
             });
           }
           model = g.scene;
-          // ставим на подиум: высота 1.7, по центру
+          // ставим на подиум: высота 1.7, лицом (как на фото) к зрителю, по центру
           const box = new THREE.Box3().setFromObject(model);
           const size = box.getSize(new THREE.Vector3());
           const k = 1.7 / size.y;
           model.scale.setScalar(k);
+          alignToPhoto(r, model, img);
           const b2 = new THREE.Box3().setFromObject(model);
           const c = b2.getCenter(new THREE.Vector3());
           model.position.x -= c.x;
@@ -114,14 +130,24 @@ export function ModelViewer({ models }: { models: ModelEntry[] }) {
               });
             }
           });
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.anisotropy = r.capabilities.getMaxAnisotropy();
           scene.add(model);
+          label = projectPhoto(model, img, tex);
+          label.setMix(mixNow);
           setLoading(false);
         },
         undefined,
         () => my === token && setLoading(false),
       );
     };
-    api.current = { show };
+    api.current = {
+      show,
+      setMix: (v) => {
+        mixNow = v;
+        label?.setMix(v);
+      },
+    };
 
     const resize = () => {
       const w = el.clientWidth;
@@ -166,8 +192,11 @@ export function ModelViewer({ models }: { models: ModelEntry[] }) {
   }, []);
 
   useEffect(() => {
-    api.current?.show(`${BASE}${models[cur].src}`);
+    api.current?.show(`${BASE}${models[cur].src}`, `${BASE}${models[cur].front}`);
   }, [cur, models]);
+  useEffect(() => {
+    api.current?.setMix(real ? 1 : 0);
+  }, [real]);
 
   const m = models[cur];
   return (
@@ -192,6 +221,25 @@ export function ModelViewer({ models }: { models: ModelEntry[] }) {
           <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-gold">{m.engine}</p>
           <p className="mt-1.5 text-xl font-light uppercase tracking-[0.12em]">{m.aroma}</p>
           <p className="mt-1 text-sm text-soft">Потяните, чтобы покрутить · колесо или щипок — приблизить</p>
+        </div>
+        <div role="radiogroup" aria-label="Этикетка" className="flex gap-1 rounded-full p-1 ring-1 ring-gold/30">
+          {[
+            [true, "Этикетка с фото"],
+            [false, "Как сгенерировано"],
+          ].map(([v, t]) => (
+            <button
+              key={String(v)}
+              type="button"
+              role="radio"
+              aria-checked={real === v}
+              onClick={() => setReal(v as boolean)}
+              className={`min-h-9 rounded-full px-3.5 text-[11px] uppercase tracking-[0.14em] transition-colors ${
+                real === v ? "bg-gold text-night" : "text-ink/75 hover:text-ink"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
         </div>
         <div role="radiogroup" aria-label="Модель" className="flex flex-wrap justify-center gap-2">
           {models.map((x, i) => (

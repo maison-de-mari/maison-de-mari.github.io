@@ -8,10 +8,10 @@ const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 // проба Higgsfield image-to-3D: два генератора на двух флаконах
 const MODELS: ModelEntry[] = [
-  { id: "zt-tripo", aroma: "Zielinski & Rozen Tobacco", engine: "Tripo H3.1", src: "/models/zielinski-tobacco-tripo.glb", photo: "/bottles/zielinski-rozen-tobacco-cedarwood-pepper.webp", mb: 2.9 },
-  { id: "zt-hunyuan", aroma: "Zielinski & Rozen Tobacco", engine: "Hunyuan3D v3", src: "/models/zielinski-tobacco-hunyuan.glb", photo: "/bottles/zielinski-rozen-tobacco-cedarwood-pepper.webp", mb: 1.3 },
-  { id: "bc-tripo", aroma: "Bleu de Chanel Parfum", engine: "Tripo H3.1", src: "/models/bleu-de-chanel-tripo.glb", photo: "/bottles/bleu-de-chanel-parfum.webp", mb: 2.8 },
-  { id: "bc-hunyuan", aroma: "Bleu de Chanel Parfum", engine: "Hunyuan3D v3", src: "/models/bleu-de-chanel-hunyuan.glb", photo: "/bottles/bleu-de-chanel-parfum.webp", mb: 1.1 },
+  { id: "zt-tripo", aroma: "Zielinski & Rozen Tobacco", engine: "Tripo H3.1", src: "/models/zielinski-tobacco-tripo.glb", photo: "/bottles/zielinski-rozen-tobacco-cedarwood-pepper.webp", front: "/models/zielinski-tobacco-front.webp", mb: 2.9 },
+  { id: "zt-hunyuan", aroma: "Zielinski & Rozen Tobacco", engine: "Hunyuan3D v3", src: "/models/zielinski-tobacco-hunyuan.glb", photo: "/bottles/zielinski-rozen-tobacco-cedarwood-pepper.webp", front: "/models/zielinski-tobacco-front.webp", mb: 1.3 },
+  { id: "bc-tripo", aroma: "Bleu de Chanel Parfum", engine: "Tripo H3.1", src: "/models/bleu-de-chanel-tripo.glb", photo: "/bottles/bleu-de-chanel-parfum.webp", front: "/models/bleu-de-chanel-front.webp", mb: 2.8 },
+  { id: "bc-hunyuan", aroma: "Bleu de Chanel Parfum", engine: "Hunyuan3D v3", src: "/models/bleu-de-chanel-hunyuan.glb", photo: "/bottles/bleu-de-chanel-parfum.webp", front: "/models/bleu-de-chanel-front.webp", mb: 1.1 },
 ];
 
 export default function Models() {
