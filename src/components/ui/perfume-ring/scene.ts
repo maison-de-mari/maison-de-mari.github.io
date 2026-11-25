@@ -96,7 +96,12 @@ type Bottle = {
   shown: number;
   loaded: boolean;
   /** настоящая 3D-модель вместо плоской картинки (картинка остаётся невидимой — для кликов) */
-  model?: { pivot: THREE.Object3D; mirror: THREE.Object3D; label: Label; mirrorLabel: Label };
+  model?: {
+    pivot: THREE.Object3D;
+    label: Label;
+    meshes: { mesh: THREE.Mesh; lite: THREE.Material; glass: THREE.Material }[];
+    refract: boolean;
+  };
 };
 
 export class PerfumeRing {
@@ -154,8 +159,9 @@ export class PerfumeRing {
 
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }));
     // стекло считает сцену дважды (второй раз — для преломления): на телефонах чуть ниже разрешение
-    const touch = window.matchMedia("(pointer: coarse)").matches;
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.6 : 2));
+    this.touch = window.matchMedia("(pointer: coarse)").matches;
+    this.dprMax = this.dpr = Math.min(window.devicePixelRatio || 1, this.touch ? 1.5 : 1.75);
+    r.setPixelRatio(this.dpr);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
@@ -382,6 +388,12 @@ export class PerfumeRing {
   private gltf?: GLTFLoader;
   private disposed = false;
   private studio!: THREE.Texture;
+  private glassReady = false;
+  private touch = false;
+  // разрешение подстраивается под скорость устройства
+  private dprMax = 2;
+  private dpr = 2;
+  private slow = 0;
 
   /**
    * Модели грузятся после картинок, по нескольку за раз и начиная с тех, что ближе к зрителю:
@@ -435,17 +447,24 @@ export class PerfumeRing {
       model.position.y -= box.min.y;
       // окружение сцены приглушено ради лака подиума — моделям отражения нужны ярче
       const ENV = 6;
+      const meshes: { mesh: THREE.Mesh; lite: THREE.Material; glass: THREE.Material }[] = [];
       model.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
         this.keep(m.geometry);
-        const swap = (x: THREE.Material) => {
-          if (!mask) return this.keep(Object.assign(x, { envMapIntensity: ENV }));
-          x.dispose();
-          // стеклу и металлу — свет предметной съёмки: полосы софтбоксов дают узнаваемые блики по краям
-          return this.keep(glassMaterial(x, 1.6, this.studio));
-        };
-        m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material);
+        const src = Array.isArray(m.material) ? m.material[0] : m.material;
+        if (!mask) {
+          m.material = this.keep(Object.assign(src, { envMapIntensity: ENV }));
+          return;
+        }
+        // два варианта стекла: лёгкое (блики, цвет) для общего плана и с преломлением — для тех,
+        // что ближе к зрителю, и для выбранного. Свет предметной съёмки: полосы софтбоксов дают блики по краям
+        const lite = this.keep(glassMaterial(src, 1.6, this.studio, false));
+        const glass = this.keep(glassMaterial(src, 1.6, this.studio, true));
+        src.dispose();
+        m.material = lite;
+        m.userData.alt = [glass];
+        meshes.push({ mesh: m, lite, glass });
       });
 
       const pivot = new THREE.Object3D();
@@ -453,32 +472,17 @@ export class PerfumeRing {
       pivot.updateMatrixWorld(true);
       const label = projectPhoto(model, img, tex, { frame: pivot, mask });
 
-      // отражение в лаке: зеркальная копия со своими полупрозрачными материалами (без пропускания — дешевле)
-      const copy = model.clone(true);
-      copy.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (!m.isMesh) return;
-        const faint = (x: THREE.Material) => {
-          const y = this.keep(x.clone()) as THREE.MeshPhysicalMaterial;
-          y.transparent = true;
-          y.opacity = 0.16;
-          y.depthWrite = false;
-          if ("transmission" in y) y.transmission = 0;
-          return y;
-        };
-        m.material = Array.isArray(m.material) ? m.material.map(faint) : faint(m.material);
-        m.renderOrder = 90;
-      });
-      const mirror = new THREE.Object3D();
-      mirror.add(copy);
-      mirror.updateMatrixWorld(true);
-      const mirrorLabel = projectPhoto(copy, img, tex, { frame: mirror, reflect: true, mask });
-      mirror.scale.y = -1;
-
-      b.group.add(pivot, mirror);
-      b.model = { pivot, mirror, label, mirrorLabel };
+      b.group.add(pivot);
+      b.model = { pivot, label, meshes, refract: false };
+      // отражение в лаке — та же лёгкая картинка, что у плоских флаконов (копия модели стоила бы ещё одну отрисовку)
       b.mesh.material.uniforms.uOpacity.value = 0;
-      b.refl.visible = false;
+      // стекло с преломлением собираем заранее, чтобы при выборе флакона не было рывка
+      if (!this.glassReady && meshes.length) {
+        this.glassReady = true;
+        meshes.forEach((x) => (x.mesh.material = x.glass));
+        this.renderer.compile(this.scene, this.camera);
+        meshes.forEach((x) => (x.mesh.material = x.lite));
+      }
       this.loop();
     } catch {
       /* модель не загрузилась — остаётся картинка */
@@ -662,6 +666,21 @@ export class PerfumeRing {
   }
 
   /** Возвращает true, пока в сцене что-то движется */
+  /** Если кадры не успевают (медленнее ~38 в секунду), понемногу снижаем разрешение; если запас есть — возвращаем */
+  private adapt(dt: number) {
+    if (dt <= 0 || dt >= 0.05) return; // первый кадр после паузы не показателен
+    if (dt > 0.026) this.slow++;
+    else if (dt < 0.0145) this.slow--;
+    let next = this.dpr;
+    if (this.slow > 24 && this.dpr > 1) next = Math.max(1, this.dpr - 0.25);
+    else if (this.slow < -240 && this.dpr < this.dprMax) next = Math.min(this.dprMax, this.dpr + 0.25);
+    else return;
+    this.slow = 0;
+    this.dpr = next;
+    this.renderer.setPixelRatio(next);
+    this.renderer.setSize(this.host.clientWidth, this.host.clientHeight, false);
+  }
+
   private frame(dt: number): boolean {
     const now = performance.now();
     const damp = (k: number) => (this.reduce ? 1 : 1 - Math.exp(-dt * k));
@@ -739,17 +758,18 @@ export class PerfumeRing {
         // выбранная медленно покачивается, показывая объём
         const sway = isSel && !this.reduce ? Math.sin(now / 1500) * 0.5 * f : 0;
         const turn = a - yaw + sway;
-        const { pivot, mirror, label, mirrorLabel } = b.model;
-        pivot.position.y = b.lift;
-        pivot.rotation.y = turn;
-        mirror.position.y = -b.lift;
-        mirror.rotation.y = turn;
+        const m = b.model;
+        m.pivot.position.y = b.lift;
+        m.pivot.rotation.y = turn;
         b.group.updateMatrixWorld(true);
-        label.update();
-        mirrorLabel.update();
-        const md = b.dim * Math.min(1, op * 1.4);
-        label.setDim(md);
-        mirrorLabel.setDim(md);
+        m.label.update();
+        m.label.setDim(b.dim * Math.min(1, op * 1.4));
+        // преломление — только у выбранного и у ближайших к зрителю (на телефоне — только у выбранного)
+        const refract = isSel || (!this.touch && this.sel === null && k > 0.86);
+        if (refract !== m.refract) {
+          m.refract = refract;
+          m.meshes.forEach((x) => (x.mesh.material = refract ? x.glass : x.lite));
+        }
       }
       b.refl.material.uniforms.uDim.value = b.dim;
       b.refl.material.uniforms.uOpacity.value = op * (1 - b.lift * 2.5);
@@ -762,6 +782,7 @@ export class PerfumeRing {
     });
 
     this.renderer.render(this.scene, cam);
+    this.adapt(dt);
     return moving || this.down;
   }
 

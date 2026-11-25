@@ -125,8 +125,54 @@ export function alignToPhoto(renderer: THREE.WebGLRenderer, model: THREE.Object3
   return best;
 }
 
+/**
+ * Цвет края флакона на каждой высоте — один раз при загрузке (раньше считался в шейдере в каждой точке
+ * 31 выборкой). rgb — средний цвет у левого и правого края (чуть внутрь), a — где по ширине левый край
+ * (для карты материалов); a = 0 — на этой высоте флакона нет.
+ */
+const STRIP_H = 256;
+function edgeStrip(img: HTMLImageElement, uv: THREE.Vector4) {
+  const COLS = 32;
+  const c = document.createElement("canvas");
+  c.width = COLS;
+  c.height = STRIP_H;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  g.imageSmoothingQuality = "high";
+  // тот же кадр, что и у проекции (uv — доля фото, занятая флаконом; ось Y у фото сверху вниз)
+  const sx = uv.x * img.naturalWidth;
+  const sw = uv.z * img.naturalWidth;
+  const sh = uv.w * img.naturalHeight;
+  const sy = (1 - uv.y - uv.w) * img.naturalHeight;
+  g.filter = "blur(1.5px)";
+  g.drawImage(img, sx, sy, sw, sh, 0, 0, COLS, STRIP_H);
+  const d = g.getImageData(0, 0, COLS, STRIP_H).data;
+  const out = new Uint8Array(STRIP_H * 4);
+  for (let y = 0; y < STRIP_H; y++) {
+    let L = -1;
+    let R = -1;
+    for (let x = 0; x < COLS; x++)
+      if (d[(y * COLS + x) * 4 + 3] > 153) {
+        if (L < 0) L = x;
+        R = x;
+      }
+    const o = (STRIP_H - 1 - y) * 4; // в текстуре низ — первая строка
+    if (L < 0) continue;
+    const l1 = Math.min(L + 1, R);
+    const r1 = Math.max(R - 1, L);
+    const cols = [l1, Math.min(l1 + 1, R), r1, Math.max(r1 - 1, L)];
+    for (let ch = 0; ch < 3; ch++) out[o + ch] = Math.round(cols.reduce((s, x) => s + d[(y * COLS + x) * 4 + ch], 0) / 4);
+    out[o + 3] = Math.max(1, Math.round(((l1 + 1) / COLS) * 255));
+  }
+  const t = new THREE.DataTexture(out, 1, STRIP_H, THREE.RGBAFormat);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
 /** Материал под стекло: физический, с пропусканием света (сколько именно — решает карта в шейдере) */
-export function glassMaterial(src: THREE.Material, envMapIntensity: number, envMap?: THREE.Texture) {
+export function glassMaterial(src: THREE.Material, envMapIntensity: number, envMap?: THREE.Texture, refract = true) {
   const s = src as THREE.MeshStandardMaterial;
   return new THREE.MeshPhysicalMaterial({
     envMap: envMap ?? null,
@@ -138,7 +184,8 @@ export function glassMaterial(src: THREE.Material, envMapIntensity: number, envM
     color: s.color,
     roughness: s.roughness,
     metalness: s.metalness,
-    transmission: 1,
+    // преломление — дорогое (сцена считается ещё раз): без него стекло держится на бликах и цвете
+    transmission: refract ? 1 : 0,
     thickness: 0.28,
     ior: 1.5,
     attenuationDistance: 1.2,
@@ -177,6 +224,7 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
   const mix = { value: 1 };
   const dim = { value: 1 };
   const toFrame = { value: new THREE.Matrix4() };
+  const strip = edgeStrip(img, uv);
 
   // своя прозрачность у каждой точки: доля стекла из карты
   const transmission = THREE.ShaderChunk.transmission_fragment.replace(
@@ -187,10 +235,13 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
   model.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
-    (Array.isArray(m.material) ? m.material : [m.material]).forEach((mat) => {
+    // userData.alt — запасные материалы той же сетки (например, стекло с преломлением для крупного плана)
+    const alt = (m.userData.alt as THREE.Material[] | undefined) ?? [];
+    [...(Array.isArray(m.material) ? m.material : [m.material]), ...alt].forEach((mat) => {
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uFront = { value: tex };
         sh.uniforms.uMask = { value: mask ?? tex };
+        sh.uniforms.uStrip = { value: strip };
         sh.uniforms.uHasMask = { value: mask ? 1 : 0 };
         sh.uniforms.uBox = { value: box };
         sh.uniforms.uUv = { value: uv };
@@ -213,6 +264,7 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
               "#include <common>",
               "uniform sampler2D uFront;",
               "uniform sampler2D uMask;",
+              "uniform sampler2D uStrip;",
               "uniform float uHasMask;",
               "uniform vec4 uBox;",
               "uniform vec4 uUv;",
@@ -243,24 +295,12 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
             vec4 pf = textureLod(uFront, fuv, lod);
             float photoW = wf * pf.a;
             // бока и спина — цвет КРАЯ флакона на этой высоте (стекло, жидкость, крышка), а не этикетки:
-            // этикетка не «оборачивается» вокруг флакона, и никакие буквы — ни свои, ни выдуманные — не проступают
-            vec4 smp[31];
-            int L = -1;
-            int Rr = -1;
-            for (int k = 0; k < 31; k++) {
-              smp[k] = texture2D(uFront, uUv.xy + vec2((float(k) + 0.5) / 31.0, fb.y) * uUv.zw, 4.0);
-              if (smp[k].a > 0.6) { if (L < 0) L = k; Rr = k; }
-            }
-            vec3 band = vec3(0.0);
-            float ba = 0.0;
-            vec2 edgeUv = fuv;
-            if (L >= 0) {
-              int l1 = min(L + 1, Rr);
-              int r1 = max(Rr - 1, L);
-              band = (smp[l1].rgb + smp[min(l1 + 1, Rr)].rgb + smp[r1].rgb + smp[max(r1 - 1, L)].rgb) * 0.25;
-              ba = 1.0;
-              edgeUv = uUv.xy + vec2((float(l1) + 1.0) / 31.0, fb.y) * uUv.zw;
-            }
+            // этикетка не «оборачивается» вокруг флакона, и никакие буквы — ни свои, ни выдуманные — не проступают.
+            // Цвет края посчитан заранее для каждой высоты (полоска uStrip: rgb — цвет, a — где край по ширине)
+            vec4 st = texture2D(uStrip, vec2(0.5, fb.y));
+            vec3 band = st.rgb;
+            float ba = step(0.002, st.a);
+            vec2 edgeUv = ba > 0.5 ? uUv.xy + vec2(st.a, fb.y) * uUv.zw : fuv;
             float restW = (1.0 - wf) * uMix * ba;
             diffuseColor.rgb = mix(diffuseColor.rgb, band * 0.78, restW);
             diffuseColor.rgb = mix(diffuseColor.rgb, pf.rgb, photoW);
