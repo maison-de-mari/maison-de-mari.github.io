@@ -150,8 +150,8 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
       onKeyDown={onKey}
       className="relative isolate h-[max(640px,100svh)] w-full overflow-hidden bg-night text-ink select-none"
     >
-      <div aria-hidden className="absolute inset-0 -z-20 bg-[radial-gradient(120%_80%_at_50%_38%,#2a1b12_0%,#160e0a_48%,#0b0706_100%)]" />
-      <Scent tone="dark" />
+      <div aria-hidden className="absolute inset-0 -z-20 bg-[radial-gradient(120%_80%_at_50%_38%,#ffffff_0%,#f7f3ed_55%,#ebe3d6_100%)]" />
+      <Scent tone="light" />
       <div ref={host} className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`} />
       {/* затемнение снизу — подпись читается поверх края подиума */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-night via-night/70 to-transparent" />
@@ -318,7 +318,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.7, delay: reduce ? 0 : 0.7, ease: EASE } }}
         exit={{ opacity: 0, y: 12, filter: "blur(6px)", transition: { duration: 0.22 } }}
-        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-[#1a110c]/62 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,.8)] ring-1 ring-ink/12 backdrop-blur-2xl backdrop-saturate-150 sm:p-7"
+        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-white/75 p-5 shadow-[0_30px_80px_-30px_rgba(70,45,20,.35)] ring-1 ring-ink/10 backdrop-blur-2xl backdrop-saturate-150 sm:p-7"
       >
         <motion.div ref={first} variants={stagger} custom={reduce ? 0 : 0.8} initial="hidden" animate="show" className="flex flex-col">
           <motion.p variants={rise} className="text-[11px] font-medium uppercase tracking-[0.28em] text-soft">
@@ -485,7 +485,7 @@ function SprayButton({ inCart, image, onToggle }: { inCart: boolean; image: stri
           className={`absolute inset-0 grid place-items-center rounded-full text-xs font-semibold uppercase tracking-[0.2em] [backface-visibility:hidden] ${
             label
               ? "bg-ink/8 text-gold ring-1 ring-gold/60"
-              : "bg-[linear-gradient(180deg,#ecd3a3,#c99d5c)] text-night shadow-[inset_0_1px_0_rgba(255,255,255,.4),inset_0_-2px_0_rgba(0,0,0,.18)]"
+              : "bg-[linear-gradient(180deg,#c9a463,#9a7438)] text-night shadow-[inset_0_1px_0_rgba(255,255,255,.4),inset_0_-2px_0_rgba(0,0,0,.18)]"
           }`}
         >
           {label ? "В корзине" : "В корзину"}

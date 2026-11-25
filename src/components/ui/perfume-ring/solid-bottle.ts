@@ -171,7 +171,10 @@ void main(){
   // блик софтбокса и кромка поверх всех сторон — стекло
   col += vec3(spec * 0.6 + rim * 0.5) * (1.0 - wF);
 
-  gl_FragColor = vec4(col * uDim, 1.0);
+  // светлая тема: дальние и невыбранные флаконы не темнеют, а тают в светлой дымке
+  vec3 haze = vec3(0.904, 0.863, 0.807);
+  vec3 lit = uDim >= 1.0 ? col * uDim : mix(haze, col, uDim);
+  gl_FragColor = vec4(lit, 1.0);
   #include <colorspace_fragment>
 }`;
 

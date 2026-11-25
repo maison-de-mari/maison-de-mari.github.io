@@ -29,7 +29,84 @@ const R = 4.4; // радиус круга флаконов
 const H = 1.7; // высота флакона
 const MAX_W = 1.05; // самый широкий флакон
 const FOV = 32;
-const GOLD = new THREE.Color("#d8b47a");
+const GOLD = new THREE.Color("#c9a463");
+const GOLD_LINE = new THREE.Color("#a98445");
+
+/**
+ * Белый мрамор (матовый): тёплая белая основа, мягкие облачные пятна и тонкие прожилки —
+ * серые и редкие золотистые. Рисуется один раз на canvas, детерминированно (одинаково при каждом заходе).
+ */
+function marble(size = 2048) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  g.fillStyle = "#f4f0ea";
+  g.fillRect(0, 0, size, size);
+  // облачные пятна
+  for (let i = 0; i < 90; i++) {
+    const x = rnd() * size;
+    const y = rnd() * size;
+    const r = size * (0.05 + rnd() * 0.18);
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    const tone = rnd() < 0.5 ? "214,206,196" : "236,226,210";
+    gr.addColorStop(0, `rgba(${tone},${0.08 + rnd() * 0.1})`);
+    gr.addColorStop(1, `rgba(${tone},0)`);
+    g.fillStyle = gr;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // прожилки: длинные плавные линии, мягкие (размытие) и чуть тоньше по краям
+  const vein = (color: string, width: number, alpha: number, blur: number) => {
+    let x = rnd() * size;
+    let y = rnd() * size;
+    let ang = rnd() * Math.PI * 2;
+    g.save();
+    g.filter = `blur(${blur}px)`;
+    g.strokeStyle = color;
+    g.globalAlpha = alpha;
+    g.lineCap = "round";
+    const steps = 60 + Math.floor(rnd() * 60);
+    for (let k = 0; k < steps; k++) {
+      ang += (rnd() - 0.5) * 0.5;
+      const nx = x + Math.cos(ang) * size * 0.012;
+      const ny = y + Math.sin(ang) * size * 0.012;
+      g.lineWidth = width * (0.4 + Math.sin((k / steps) * Math.PI) * 0.9);
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(nx, ny);
+      g.stroke();
+      x = nx;
+      y = ny;
+      // ответвления
+      if (rnd() < 0.04) {
+        const save = [x, y, ang];
+        ang += (rnd() - 0.5) * 1.6;
+        for (let b = 0; b < 18; b++) {
+          ang += (rnd() - 0.5) * 0.5;
+          const bx = x + Math.cos(ang) * size * 0.01;
+          const by = y + Math.sin(ang) * size * 0.01;
+          g.lineWidth = width * 0.35 * (1 - b / 18);
+          g.beginPath();
+          g.moveTo(x, y);
+          g.lineTo(bx, by);
+          g.stroke();
+          x = bx;
+          y = by;
+        }
+        [x, y, ang] = save;
+      }
+    }
+    g.restore();
+  };
+  for (let i = 0; i < 14; i++) vein("#9d968e", 2 + rnd() * 3, 0.32, 1.2);
+  for (let i = 0; i < 26; i++) vein("#bdb6ad", 1 + rnd() * 1.5, 0.28, 0.8);
+  for (let i = 0; i < 5; i++) vein("#c4a46c", 1.5 + rnd() * 1.5, 0.35, 0.8);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
 
 const vert = /* glsl */ `
 varying vec2 vUv;
@@ -51,7 +128,10 @@ void main(){
   if (uReflect > 0.5) a *= (1.0 - smoothstep(0.0, 0.36, vUv.y)) * 0.24;
   vec3 col = c.rgb;
   if (!front) col = mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, 0.5) * 0.3;
-  gl_FragColor = vec4(col * uDim, a);
+  // светлая тема: дальние и невыбранные флаконы не темнеют, а тают в светлой дымке
+  vec3 haze = vec3(0.904, 0.863, 0.807);
+  vec3 lit = uDim >= 1.0 ? col * uDim : mix(haze, col, uDim);
+  gl_FragColor = vec4(lit, a);
   #include <colorspace_fragment>
 }`;
 
@@ -224,34 +304,38 @@ export class PerfumeRing {
 
   private buildStage() {
     const s = this.scene;
-    s.add(new THREE.AmbientLight(0xfff0e0, 0.35));
-    // свет сверху-сзади: блик ложится за флаконами, а не под подписью
-    const spot = new THREE.SpotLight(0xffd9a8, 55, 30, 0.7, 1, 1.6);
-    spot.position.set(0, 9, -4);
-    spot.target.position.set(0, 0, 0);
-    s.add(spot, spot.target);
-    const warm = new THREE.PointLight(0xd8a860, 6, 12, 1.5);
-    warm.position.set(0, 2.2, 0);
-    s.add(warm);
-    // мягкий фронтальный свет — для 3D-моделей (плоские картинки освещение не используют)
-    const fill = new THREE.DirectionalLight(0xfff0e0, 1.3);
-    fill.position.set(0, 5, 14);
-    s.add(fill);
+    // ровный дневной свет: матовому камню нужен рассеянный свет и мягкий ключевой сверху-спереди
+    s.add(new THREE.HemisphereLight(0xffffff, 0xe9e1d4, 1.6));
+    const key = new THREE.DirectionalLight(0xfff6ea, 1.4);
+    key.position.set(-4, 9, 7);
+    s.add(key);
 
-    // подиум: тёмный лак с прозрачным лаковым слоем
-    const podium = new THREE.Mesh(
-      this.keep(new THREE.CylinderGeometry(R + 1.12, R + 1.22, 0.32, 180, 1)),
-      // depthWrite: false — отражения флаконов (они «под» лаком) рисуются поверх подиума,
-      // но по-прежнему прячутся за флаконами и моделями
-      this.keep(new THREE.MeshPhysicalMaterial({ color: "#0e0806", roughness: 0.42, metalness: 0.05, clearcoat: 0.75, clearcoatRoughness: 0.22, depthWrite: false })),
-    );
+    // подиум: матовый белый мрамор
+    const marbleTex = this.keep(marble());
+    const stone = this.keep(new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.86, metalness: 0 }));
+    const podium = new THREE.Mesh(this.keep(new THREE.CylinderGeometry(R + 1.12, R + 1.22, 0.32, 180, 1)), stone);
     podium.position.y = -0.16;
-    podium.renderOrder = -2;
     s.add(podium);
 
-    // золотой обод
-    const gold = this.keep(new THREE.MeshStandardMaterial({ color: GOLD, metalness: 1, roughness: 0.26 }));
-    const rim = new THREE.Mesh(this.keep(new THREE.TorusGeometry(R + 1.14, 0.032, 18, 240)), gold);
+    // тень подиума на «полу» — витрина стоит, а не висит на белом
+    const floor = new THREE.Mesh(
+      this.keep(new THREE.PlaneGeometry((R + 2.6) * 2, (R + 2.6) * 2)),
+      this.keep(
+        new THREE.MeshBasicMaterial({
+          map: this.keep(radial([[0, "rgba(70,50,30,0.32)"], [0.62, "rgba(70,50,30,0.16)"], [1, "rgba(70,50,30,0)"]])),
+          transparent: true,
+          depthWrite: false,
+        }),
+      ),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.34;
+    floor.renderOrder = -3;
+    s.add(floor);
+
+    // ободок — сатинированное (матовое) золото
+    const gold = this.keep(new THREE.MeshStandardMaterial({ color: GOLD, metalness: 1, roughness: 0.4 }));
+    const rim = new THREE.Mesh(this.keep(new THREE.TorusGeometry(R + 1.14, 0.03, 18, 240)), gold);
     rim.rotation.x = Math.PI / 2;
     s.add(rim);
     const rimLow = new THREE.Mesh(this.keep(new THREE.TorusGeometry(R + 1.22, 0.02, 12, 240)), gold);
@@ -259,10 +343,10 @@ export class PerfumeRing {
     rimLow.position.y = -0.32;
     s.add(rimLow);
 
-    // циферблат — крутится вместе с флаконами
-    const line = this.keep(new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.38, depthWrite: false }));
+    // циферблат — тонкие золотые линии, крутится вместе с флаконами
+    const line = this.keep(new THREE.MeshBasicMaterial({ color: GOLD_LINE, transparent: true, opacity: 0.6, depthWrite: false }));
     const ringAt = (r0: number, r1: number, op = 1) => {
-      const m = op === 1 ? line : this.keep(new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.38 * op, depthWrite: false }));
+      const m = op === 1 ? line : this.keep(new THREE.MeshBasicMaterial({ color: GOLD_LINE, transparent: true, opacity: 0.6 * op, depthWrite: false }));
       const ring = new THREE.Mesh(this.keep(new THREE.RingGeometry(r0, r1, 240)), m);
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = 0.003;
@@ -297,37 +381,6 @@ export class PerfumeRing {
       this.dial.add(d);
     }
     s.add(this.dial);
-
-    // тёплое свечение в центре и ореол за дальними флаконами
-    const pool = new THREE.Mesh(
-      this.keep(new THREE.PlaneGeometry(6.5, 6.5)),
-      this.keep(
-        new THREE.MeshBasicMaterial({
-          map: this.keep(radial([[0, "rgba(232,190,120,0.42)"], [0.45, "rgba(200,140,70,0.12)"], [1, "rgba(0,0,0,0)"]])),
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      ),
-    );
-    pool.rotation.x = -Math.PI / 2;
-    pool.position.y = 0.006;
-    s.add(pool);
-
-    const halo = new THREE.Mesh(
-      this.keep(new THREE.PlaneGeometry(16, 9)),
-      this.keep(
-        new THREE.MeshBasicMaterial({
-          map: this.keep(radial([[0, "rgba(214,160,96,0.30)"], [0.5, "rgba(140,80,40,0.08)"], [1, "rgba(0,0,0,0)"]])),
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      ),
-    );
-    halo.position.set(0, 1.8, -R - 1.5);
-    halo.renderOrder = -1;
-    s.add(halo);
   }
 
   private buildBottles(images: string[]) {
@@ -386,6 +439,8 @@ export class PerfumeRing {
           shadow.scale.set(w * 1.5, 0.5, 1);
           mesh.material.uniforms.map.value = tex;
           refl.material.uniforms.map.value = tex;
+          // загружаем картинку в видеокарту сразу — иначе первые кадры флакон рисуется пустым (белым)
+          this.renderer.initTexture(tex);
           mesh.visible = refl.visible = true;
           b.loaded = true;
           const solidSpec = this.solids[i];
@@ -405,6 +460,8 @@ export class PerfumeRing {
                 : Promise.resolve(undefined);
             Promise.all([load(solidSpec.back), load(solidSpec.side)]).then(([back, side]) => {
               if (this.disposed) return;
+              if (back) this.renderer.initTexture(back);
+              if (side) this.renderer.initTexture(side);
               const sb = buildSolid(img, tex, h, solidSpec, { back, side });
               this.disposables.push(sb);
               sb.mesh.userData.index = i;
@@ -773,7 +830,7 @@ export class PerfumeRing {
       const isSel = this.sel === i;
       const lift = isSel ? 0.1 + bob : this.hover === i && this.sel === null ? 0.12 : 0;
       b.lift += (lift - b.lift) * damp(9);
-      let dim = 0.2 + 0.8 * Math.pow(k, 1.35);
+      let dim = 0.5 + 0.5 * Math.pow(k, 1.2);
       if (this.hover === i && this.sel === null) dim = Math.min(1.12, dim * 1.18);
       dim *= 1 - f * (isSel ? 0 : 0.86);
       if (isSel) dim = Math.max(dim, 1);
@@ -790,12 +847,14 @@ export class PerfumeRing {
       b.refl.position.y = -b.lift;
       const op = (0.42 + 0.58 * k) * b.shown * (isSel ? 1 : 1 - f * 0.55);
       b.mesh.material.uniforms.uDim.value = b.dim;
-      b.mesh.material.uniforms.uOpacity.value = b.model || b.solid ? 0 : op;
+      b.mesh.material.uniforms.uOpacity.value = b.model || (b.solid && b.shown > 0.6) ? 0 : op;
       if (b.solid) {
         b.solid.mesh.position.y = b.lift;
         // выбранный флакон на крупном плане медленно поворачивается — видно бок и объём
         b.solid.mesh.rotation.y = isSel && !this.reduce ? Math.sin(now / 1700) * 0.75 * f : 0;
-        b.solid.setDim(b.dim * Math.min(1, op * 1.4));
+        // появляется, когда картинка уже проявилась (в светлой теме «затухание» — это белая дымка)
+        b.solid.mesh.visible = b.shown > 0.6;
+        b.solid.setDim(b.dim);
       }
       if (b.model) {
         // модель стоит лицом наружу кольца — на поворотах видно её бок;
@@ -816,8 +875,9 @@ export class PerfumeRing {
         }
       }
       b.refl.material.uniforms.uDim.value = b.dim;
-      b.refl.material.uniforms.uOpacity.value = op * (1 - b.lift * 2.5);
-      b.shadow.material.opacity = op * (0.85 - b.lift * 2.2);
+      // матовый камень не отражает — только мягкая тень под флаконом
+      b.refl.material.uniforms.uOpacity.value = 0;
+      b.shadow.material.opacity = Math.min(1, op * 1.2) * (0.9 - b.lift * 2.2);
       // прозрачное рисуем от дальнего к ближнему
       const order = Math.round(k * 200);
       b.mesh.renderOrder = 400 + order;
