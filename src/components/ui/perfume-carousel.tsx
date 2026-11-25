@@ -107,7 +107,16 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
             events,
             [],
             "outward",
-            items.map((a) => SHAPE[a.slug] ?? null),
+            // к форме — фото сзади и (у плоских) сбоку
+            items.map((a) => {
+              const sp = SHAPE[a.slug];
+              if (!sp) return null;
+              return {
+                ...sp,
+                back: `${BASE}/models/${a.slug}-back.webp`,
+                side: sp.kind === "flat" ? `${BASE}/models/${a.slug}-side.webp` : undefined,
+              };
+            }),
           );
     ring.current = r;
     return () => {

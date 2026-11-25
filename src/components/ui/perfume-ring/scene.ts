@@ -390,11 +390,28 @@ export class PerfumeRing {
           b.loaded = true;
           const solidSpec = this.solids[i];
           if (solidSpec) {
-            const sb = buildSolid(img, tex, h, solidSpec);
-            this.disposables.push(sb);
-            sb.mesh.userData.index = i;
-            b.group.add(sb.mesh);
-            b.solid = sb;
+            // объёмный флакон: ждём фото сзади и сбоку (пока — обычная картинка), затем собираем фигуру
+            const tl = new THREE.TextureLoader();
+            const load = (u?: string) =>
+              u
+                ? tl
+                    .loadAsync(u)
+                    .then((t) => {
+                      t.colorSpace = THREE.SRGBColorSpace;
+                      t.anisotropy = maxAniso;
+                      return t;
+                    })
+                    .catch(() => undefined)
+                : Promise.resolve(undefined);
+            Promise.all([load(solidSpec.back), load(solidSpec.side)]).then(([back, side]) => {
+              if (this.disposed) return;
+              const sb = buildSolid(img, tex, h, solidSpec, { back, side });
+              this.disposables.push(sb);
+              sb.mesh.userData.index = i;
+              b.group.add(sb.mesh);
+              b.solid = sb;
+              this.loop();
+            });
           }
           this.loaded();
         },
@@ -776,6 +793,8 @@ export class PerfumeRing {
       b.mesh.material.uniforms.uOpacity.value = b.model || b.solid ? 0 : op;
       if (b.solid) {
         b.solid.mesh.position.y = b.lift;
+        // выбранный флакон на крупном плане медленно поворачивается — видно бок и объём
+        b.solid.mesh.rotation.y = isSel && !this.reduce ? Math.sin(now / 1700) * 0.75 * f : 0;
         b.solid.setDim(b.dim * Math.min(1, op * 1.4));
       }
       if (b.model) {
