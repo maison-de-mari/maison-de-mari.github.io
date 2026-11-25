@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Maison De Mari — тёмный тёплый фон + шампанское золото, один шрифт Jost (рукописный — только логотип) */
+@theme {
+  --color-night: #120c09;
+  --color-ink: #f3e9dc;
+  --color-soft: #b8a794;
+  --color-gold: #d8b47a;
+  --font-sans: var(--font-jost), "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-script: var(--font-pinyon), cursive;
+}
+
+:root {
+  color-scheme: dark;
+  /* для перенесённых компонентов в стиле shadcn */
+  --color-background: var(--color-night);
+  --color-foreground: var(--color-ink);
+  --color-muted-foreground: var(--color-soft);
+}
+
+html,
+body {
+  background: var(--color-night);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 3px;
+}
+
+/* шлейф аромата (src/components/scent.tsx) */
+.scent-wisps .wisp {
+  fill: none;
+  stroke: url(#scent-fade);
+  stroke-width: 1.2;
+  opacity: 0.35;
+  stroke-dasharray: 900 1400;
+  animation: wisp-flow 22s linear infinite;
+}
+.scent-wisps .wisp-2 {
+  animation-duration: 28s;
+  animation-delay: -9s;
+  opacity: 0.25;
+}
+.scent-wisps .wisp-3 {
+  animation-duration: 34s;
+  animation-delay: -17s;
+  opacity: 0.2;
+}
+@keyframes wisp-flow {
+  to {
+    stroke-dashoffset: -2300;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scent-wisps .wisp {
+    animation: none;
+  }
+}
