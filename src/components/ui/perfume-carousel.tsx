@@ -7,6 +7,7 @@ import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
+import { CssRing } from "./perfume-ring/css-ring";
 
 /*
  * Круглая 3D-витрина Maison De Mari (по мотивам Deck Rack Add To Cart).
@@ -24,9 +25,11 @@ const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
 
-export function PerfumeCarousel({ items = ALL }: { items?: AromaWithImages[] }) {
+export type RingEngine = "webgl" | "css";
+
+export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { items?: AromaWithImages[]; engine?: RingEngine; children?: React.ReactNode }) {
   const host = useRef<HTMLDivElement>(null);
-  const ring = useRef<PerfumeRing | null>(null);
+  const ring = useRef<PerfumeRing | CssRing | null>(null);
   const frontBtn = useRef<HTMLButtonElement>(null);
   const [front, setFront] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
@@ -48,7 +51,8 @@ export function PerfumeCarousel({ items = ALL }: { items?: AromaWithImages[] }) 
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const r = new PerfumeRing(
+    const Engine = engine === "css" ? CssRing : PerfumeRing;
+    const r = new Engine(
       el,
       items.map((a) => bottleSrc(a.slug)),
       {
@@ -64,7 +68,7 @@ export function PerfumeCarousel({ items = ALL }: { items?: AromaWithImages[] }) 
       r.dispose();
       ring.current = null;
     };
-  }, [items, pick, close]);
+  }, [items, engine, pick, close]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -109,7 +113,7 @@ export function PerfumeCarousel({ items = ALL }: { items?: AromaWithImages[] }) 
       <motion.div
         animate={{ opacity: open ? 0 : 1, y: open ? -10 : 0 }}
         transition={{ duration: 0.4, ease: EASE }}
-        className="pointer-events-none absolute inset-x-0 top-[4.75rem] z-10 px-4 text-center sm:top-24"
+        className={`pointer-events-none absolute inset-x-0 z-10 px-4 text-center sm:top-24 ${children ? "top-[7.25rem]" : "top-[4.75rem]"}`}
       >
         <p className="text-[11px] font-medium uppercase tracking-[0.32em] text-soft">Парфюмерный бутик · Ташкент</p>
         <h1 className="mt-3 text-[clamp(1.6rem,4vw,3rem)] font-light uppercase leading-none tracking-[0.18em]">Витрина ароматов</h1>
@@ -161,6 +165,8 @@ export function PerfumeCarousel({ items = ALL }: { items?: AromaWithImages[] }) 
       <AnimatePresence>
         {sel !== null && <Card key="card" aroma={items[sel]} index={sel} onClose={close} reduce={!!reduce} />}
       </AnimatePresence>
+
+      {children}
 
       {/* для экранных чтецов и клавиатуры — тот же выбор списком */}
       <ul className="sr-only">
