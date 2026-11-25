@@ -32,82 +32,6 @@ const FOV = 32;
 const GOLD = new THREE.Color("#c9a463");
 const GOLD_LINE = new THREE.Color("#a98445");
 
-/**
- * Белый мрамор (матовый): тёплая белая основа, мягкие облачные пятна и тонкие прожилки —
- * серые и редкие золотистые. Рисуется один раз на canvas, детерминированно (одинаково при каждом заходе).
- */
-function marble(size = 2048) {
-  const c = document.createElement("canvas");
-  c.width = c.height = size;
-  const g = c.getContext("2d")!;
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  g.fillStyle = "#f4f0ea";
-  g.fillRect(0, 0, size, size);
-  // облачные пятна
-  for (let i = 0; i < 90; i++) {
-    const x = rnd() * size;
-    const y = rnd() * size;
-    const r = size * (0.05 + rnd() * 0.18);
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    const tone = rnd() < 0.5 ? "214,206,196" : "236,226,210";
-    gr.addColorStop(0, `rgba(${tone},${0.08 + rnd() * 0.1})`);
-    gr.addColorStop(1, `rgba(${tone},0)`);
-    g.fillStyle = gr;
-    g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-  // прожилки: длинные плавные линии, мягкие (размытие) и чуть тоньше по краям
-  const vein = (color: string, width: number, alpha: number, blur: number) => {
-    let x = rnd() * size;
-    let y = rnd() * size;
-    let ang = rnd() * Math.PI * 2;
-    g.save();
-    g.filter = `blur(${blur}px)`;
-    g.strokeStyle = color;
-    g.globalAlpha = alpha;
-    g.lineCap = "round";
-    const steps = 60 + Math.floor(rnd() * 60);
-    for (let k = 0; k < steps; k++) {
-      ang += (rnd() - 0.5) * 0.5;
-      const nx = x + Math.cos(ang) * size * 0.012;
-      const ny = y + Math.sin(ang) * size * 0.012;
-      g.lineWidth = width * (0.4 + Math.sin((k / steps) * Math.PI) * 0.9);
-      g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(nx, ny);
-      g.stroke();
-      x = nx;
-      y = ny;
-      // ответвления
-      if (rnd() < 0.04) {
-        const save = [x, y, ang];
-        ang += (rnd() - 0.5) * 1.6;
-        for (let b = 0; b < 18; b++) {
-          ang += (rnd() - 0.5) * 0.5;
-          const bx = x + Math.cos(ang) * size * 0.01;
-          const by = y + Math.sin(ang) * size * 0.01;
-          g.lineWidth = width * 0.35 * (1 - b / 18);
-          g.beginPath();
-          g.moveTo(x, y);
-          g.lineTo(bx, by);
-          g.stroke();
-          x = bx;
-          y = by;
-        }
-        [x, y, ang] = save;
-      }
-    }
-    g.restore();
-  };
-  for (let i = 0; i < 14; i++) vein("#9d968e", 2 + rnd() * 3, 0.32, 1.2);
-  for (let i = 0; i < 26; i++) vein("#bdb6ad", 1 + rnd() * 1.5, 0.28, 0.8);
-  for (let i = 0; i < 5; i++) vein("#c4a46c", 1.5 + rnd() * 1.5, 0.35, 0.8);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
-
 const vert = /* glsl */ `
 varying vec2 vUv;
 void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -310,38 +234,76 @@ export class PerfumeRing {
     key.position.set(-4, 9, 7);
     s.add(key);
 
-    // подиум: матовый белый мрамор
-    const marbleTex = this.keep(marble());
-    const stone = this.keep(new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.86, metalness: 0 }));
-    const podium = new THREE.Mesh(this.keep(new THREE.CylinderGeometry(R + 1.12, R + 1.22, 0.32, 180, 1)), stone);
-    podium.position.y = -0.16;
+    // стол: толстое прозрачное стекло. Верх почти невидим (блики и отражения студии),
+    // кромка — полированная, с зеленоватым оттенком, как у настоящего толстого стекла
+    const glassTop = this.keep(
+      new THREE.MeshPhysicalMaterial({
+        color: "#eef5f3",
+        transparent: true,
+        opacity: 0.32,
+        roughness: 0.04,
+        metalness: 0,
+        clearcoat: 1,
+        clearcoatRoughness: 0.03,
+        envMap: this.studio,
+        envMapIntensity: 1.1,
+        depthWrite: false,
+      }),
+    );
+    const glassEdge = this.keep(
+      new THREE.MeshPhysicalMaterial({
+        color: "#b9d6cc",
+        transparent: true,
+        opacity: 0.78,
+        roughness: 0.06,
+        clearcoat: 1,
+        envMap: this.studio,
+        envMapIntensity: 1.6,
+        emissive: "#9cc4b6",
+        emissiveIntensity: 0.18,
+        depthWrite: false,
+      }),
+    );
+    // у цилиндра группы материалов: бок, верх, низ
+    const podium = new THREE.Mesh(this.keep(new THREE.CylinderGeometry(R + 1.16, R + 1.16, 0.3, 180, 1)), [glassEdge, glassTop, glassTop]);
+    podium.position.y = -0.15;
+    podium.renderOrder = -2;
     s.add(podium);
+    // светлая фаска по верхнему краю стекла
+    const bevel = new THREE.Mesh(
+      this.keep(new THREE.TorusGeometry(R + 1.16, 0.012, 8, 240)),
+      this.keep(new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.9 })),
+    );
+    bevel.rotation.x = Math.PI / 2;
+    bevel.position.y = 0.0;
+    s.add(bevel);
 
     // тень подиума на «полу» — витрина стоит, а не висит на белом
     const floor = new THREE.Mesh(
       this.keep(new THREE.PlaneGeometry((R + 2.6) * 2, (R + 2.6) * 2)),
       this.keep(
         new THREE.MeshBasicMaterial({
-          map: this.keep(radial([[0, "rgba(70,50,30,0.32)"], [0.62, "rgba(70,50,30,0.16)"], [1, "rgba(70,50,30,0)"]])),
+          map: this.keep(radial([[0, "rgba(60,70,64,0.22)"], [0.6, "rgba(60,70,64,0.12)"], [1, "rgba(60,70,64,0)"]])),
           transparent: true,
           depthWrite: false,
         }),
       ),
     );
     floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.34;
+    floor.position.y = -0.62;
     floor.renderOrder = -3;
     s.add(floor);
 
     // ободок — сатинированное (матовое) золото
     const gold = this.keep(new THREE.MeshStandardMaterial({ color: GOLD, metalness: 1, roughness: 0.4 }));
-    const rim = new THREE.Mesh(this.keep(new THREE.TorusGeometry(R + 1.14, 0.03, 18, 240)), gold);
-    rim.rotation.x = Math.PI / 2;
-    s.add(rim);
-    const rimLow = new THREE.Mesh(this.keep(new THREE.TorusGeometry(R + 1.22, 0.02, 12, 240)), gold);
+    // тонкий золотой обод под стеклом и золотая опора-кольцо — стол «парит» на ней
+    const rimLow = new THREE.Mesh(this.keep(new THREE.TorusGeometry(R + 1.1, 0.025, 12, 240)), gold);
     rimLow.rotation.x = Math.PI / 2;
-    rimLow.position.y = -0.32;
+    rimLow.position.y = -0.31;
     s.add(rimLow);
+    const base = new THREE.Mesh(this.keep(new THREE.CylinderGeometry(R * 0.42, R * 0.48, 0.3, 120, 1, true)), gold);
+    base.position.y = -0.46;
+    s.add(base);
 
     // циферблат — тонкие золотые линии, крутится вместе с флаконами
     const line = this.keep(new THREE.MeshBasicMaterial({ color: GOLD_LINE, transparent: true, opacity: 0.6, depthWrite: false }));
@@ -875,8 +837,8 @@ export class PerfumeRing {
         }
       }
       b.refl.material.uniforms.uDim.value = b.dim;
-      // матовый камень не отражает — только мягкая тень под флаконом
-      b.refl.material.uniforms.uOpacity.value = 0;
+      // отражение в стекле стола
+      b.refl.material.uniforms.uOpacity.value = op * 0.8 * (1 - b.lift * 2.5);
       b.shadow.material.opacity = Math.min(1, op * 1.2) * (0.9 - b.lift * 2.2);
       // прозрачное рисуем от дальнего к ближнему
       const order = Math.round(k * 200);
