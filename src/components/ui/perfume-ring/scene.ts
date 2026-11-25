@@ -3,10 +3,14 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { alignToPhoto, glassMaterial, projectPhoto } from "./label-projection";
+import { buildRealBottle, type RealBottleSpec } from "./real-bottle";
 
-/** 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) + карта материалов */
-export type BottleModel = { src: string; front: string; mask?: string };
-type Label = ReturnType<typeof projectPhoto>;
+/**
+ * 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) + карта материалов.
+ * real — вместо сгенерированной модели собрать «настоящий» флакон из точных форм (стекло, жидкость, буквы).
+ */
+export type BottleModel = { src: string; front: string; mask?: string; real?: RealBottleSpec };
+type Label = { setDim(v: number): void; setMix(v: number): void; update(): void };
 
 /**
  * Круглая витрина Maison De Mari на three.js.
@@ -424,6 +428,20 @@ export class PerfumeRing {
       const img = new Image();
       img.src = spec.front;
       const tl = new THREE.TextureLoader();
+      if (spec.real) {
+        await img.decode();
+        if (this.disposed) return;
+        // «настоящий» флакон из точных форм: прозрачное стекло, жидкость внутри, буквы с фото
+        const real = buildRealBottle(spec.real, b.h, img, this.studio);
+        this.disposables.push(real);
+        const pivot = new THREE.Object3D();
+        pivot.add(real.group);
+        b.group.add(pivot);
+        b.model = { pivot, label: real.label, meshes: real.swaps, refract: false };
+        b.mesh.material.uniforms.uOpacity.value = 0;
+        this.loop();
+        return;
+      }
       const [g, tex, mask] = await Promise.all([
         this.gltf.loadAsync(spec.src),
         tl.loadAsync(spec.front),

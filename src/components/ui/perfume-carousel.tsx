@@ -7,6 +7,7 @@ import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing, type BottleModel } from "./perfume-ring/scene";
+import type { RealBottleSpec } from "./perfume-ring/real-bottle";
 import { CssRing } from "./perfume-ring/css-ring";
 
 /*
@@ -23,19 +24,32 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
 
 /**
+ * «Настоящие» флаконы из точных форм по фото (ровные грани, прозрачное стекло, жидкость внутри, буквы с фото).
+ * Пропорции замерены по фото анфас: доли высоты сверху и доли ширины.
+ */
+const REAL: Record<string, RealBottleSpec> = {
+  "bleu-de-chanel-parfum": {
+    body: { top: 0.287, width: 0.995, depth: 0.38, round: 0.012 },
+    glass: { wall: 0.045, base: 0.065, fill: 0.99 },
+    parts: [
+      { top: 0, bottom: 0.266, width: 0.344, finish: "gloss" }, // крышка
+      { top: 0.266, bottom: 0.287, width: 0.3, finish: "metal" }, // воротничок
+    ],
+    letters: "gold",
+  },
+};
+const PHOTO_ONLY = new Set(Object.keys(REAL));
+
+/**
  * 3D-модель каждого флакона (Higgsfield Hunyuan3D / Tripo) + фото анфас для этикетки + карта материалов
  * (стекло, металл, бумага). Пока модель грузится или если не загрузилась — на её месте картинка.
  */
-/** Флаконы, которые показываем созданным фото, а не 3D-моделью */
-const PHOTO_ONLY = new Set(["bleu-de-chanel-parfum"]);
-const modelOf = (slug: string): BottleModel | null =>
-  PHOTO_ONLY.has(slug)
-    ? null
-    : {
-        src: `${BASE}/models/${slug}.glb`,
-        front: `${BASE}/models/${slug}-front.webp`,
-        mask: `${BASE}/models/${slug}-mask.png`,
-      };
+const modelOf = (slug: string): BottleModel => ({
+  src: `${BASE}/models/${slug}.glb`,
+  front: `${BASE}/models/${slug}-front.webp`,
+  mask: `${BASE}/models/${slug}-mask.png`,
+  real: REAL[slug],
+});
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");

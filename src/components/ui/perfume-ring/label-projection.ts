@@ -225,6 +225,8 @@ export type ProjectOptions = {
   reflect?: boolean;
   /** карта материалов того же кадра, что фото: R — стекло, G — металл, B — шероховатое (бумага, мат, ткань) */
   mask?: THREE.Texture;
+  /** модель из точных форм: «перёд» — строго по направлению грани (боковые грани фото не получают) */
+  exact?: boolean;
 };
 
 /**
@@ -235,7 +237,7 @@ export type ProjectOptions = {
  * (нужен glassMaterial), металл отражает, бумага матовая.
  */
 export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: THREE.Texture, opts: ProjectOptions = {}) {
-  const { frame, reflect = false, mask } = opts;
+  const { frame, reflect = false, mask, exact = false } = opts;
   const { uv } = photoPixels(img);
   model.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(model, true);
@@ -271,6 +273,7 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
         sh.uniforms.uToFrame = toFrame;
         sh.uniforms.uReflect = { value: reflect ? 1 : 0 };
         sh.uniforms.uDepth = { value: depth };
+        sh.uniforms.uExact = { value: exact ? 1 : 0 };
         sh.uniforms.uTexH = { value: img.naturalHeight * uv.w };
         sh.vertexShader = sh.vertexShader
           .replace("#include <common>", "#include <common>\nuniform mat4 uToFrame;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;")
@@ -293,6 +296,7 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
               "uniform float uDim;",
               "uniform float uReflect;",
               "uniform vec2 uDepth;",
+              "uniform float uExact;",
               "uniform float uTexH;",
               "varying vec3 vWPos;",
               "varying vec3 vWNrm;",
@@ -307,7 +311,7 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
             // фото сжимается). Решаем по положению, а не по наклону: у выдуманных букв и трубки, вылепленных
             // в самой модели, стенки смотрят вбок — по наклону там проступала бы каша
             float q = (vWPos.z - uDepth.x) / max(uDepth.y, 1e-4);
-            float wf = max(smoothstep(0.3, 0.6, wn.z), smoothstep(-0.1, 0.15, q)) * uMix;
+            float wf = mix(max(smoothstep(0.3, 0.6, wn.z), smoothstep(-0.1, 0.15, q)), smoothstep(0.55, 0.85, wn.z), uExact) * uMix;
             // резкость фото выбираем по высоте флакона на экране: на рёбрах вылепленной трубки/букв
             // автоматический выбор взял бы самый размытый уровень, и там выпадали бы буквы
             float dy = max(abs(dFdx(fb.y)), abs(dFdy(fb.y)));
