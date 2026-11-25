@@ -26,11 +26,16 @@ const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
  * 3D-модель каждого флакона (Higgsfield Hunyuan3D / Tripo) + фото анфас для этикетки + карта материалов
  * (стекло, металл, бумага). Пока модель грузится или если не загрузилась — на её месте картинка.
  */
-const modelOf = (slug: string): BottleModel => ({
-  src: `${BASE}/models/${slug}.glb`,
-  front: `${BASE}/models/${slug}-front.webp`,
-  mask: `${BASE}/models/${slug}-mask.png`,
-});
+/** Флаконы, которые показываем созданным фото, а не 3D-моделью */
+const PHOTO_ONLY = new Set(["bleu-de-chanel-parfum"]);
+const modelOf = (slug: string): BottleModel | null =>
+  PHOTO_ONLY.has(slug)
+    ? null
+    : {
+        src: `${BASE}/models/${slug}.glb`,
+        front: `${BASE}/models/${slug}-front.webp`,
+        mask: `${BASE}/models/${slug}-mask.png`,
+      };
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
@@ -61,7 +66,8 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const images = items.map((a) => bottleSrc(a.slug));
+    // флаконы «только фото» — в высоком разрешении (на крупном плане они без 3D-модели)
+    const images = items.map((a) => (PHOTO_ONLY.has(a.slug) ? `${BASE}/models/${a.slug}-front.webp` : bottleSrc(a.slug)));
     const events = {
       onFront: setFront,
       onHover: () => {},

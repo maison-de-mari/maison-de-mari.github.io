@@ -146,7 +146,9 @@ function edgeStrip(img: HTMLImageElement, uv: THREE.Vector4) {
   g.filter = "blur(1.5px)";
   g.drawImage(img, sx, sy, sw, sh, 0, 0, COLS, STRIP_H);
   const d = g.getImageData(0, 0, COLS, STRIP_H).data;
-  const out = new Uint8Array(STRIP_H * 4);
+  // 1) цвет у краёв в каждой строке: из 4 точек берём две средние по яркости — блики и тёмные кромки отбрасываем
+  const rgb = new Float32Array(STRIP_H * 3);
+  const edge = new Float32Array(STRIP_H); // 0 — строки без флакона
   for (let y = 0; y < STRIP_H; y++) {
     let L = -1;
     let R = -1;
@@ -155,13 +157,32 @@ function edgeStrip(img: HTMLImageElement, uv: THREE.Vector4) {
         if (L < 0) L = x;
         R = x;
       }
-    const o = (STRIP_H - 1 - y) * 4; // в текстуре низ — первая строка
     if (L < 0) continue;
     const l1 = Math.min(L + 1, R);
     const r1 = Math.max(R - 1, L);
-    const cols = [l1, Math.min(l1 + 1, R), r1, Math.max(r1 - 1, L)];
-    for (let ch = 0; ch < 3; ch++) out[o + ch] = Math.round(cols.reduce((s, x) => s + d[(y * COLS + x) * 4 + ch], 0) / 4);
-    out[o + 3] = Math.max(1, Math.round(((l1 + 1) / COLS) * 255));
+    const px = [l1, Math.min(l1 + 1, R), r1, Math.max(r1 - 1, L)]
+      .map((x) => [d[(y * COLS + x) * 4], d[(y * COLS + x) * 4 + 1], d[(y * COLS + x) * 4 + 2]])
+      .sort((a, b) => a[0] + a[1] + a[2] - (b[0] + b[1] + b[2]));
+    for (let ch = 0; ch < 3; ch++) rgb[y * 3 + ch] = (px[1][ch] + px[2][ch]) / 2;
+    edge[y] = (l1 + 1) / COLS;
+  }
+  // 2) плавно по высоте — иначе на гладких боках видны горизонтальные полосы
+  const RAD = 7;
+  const out = new Uint8Array(STRIP_H * 4);
+  for (let y = 0; y < STRIP_H; y++) {
+    if (!edge[y]) continue;
+    let w = 0;
+    const acc = [0, 0, 0];
+    for (let k = -RAD; k <= RAD; k++) {
+      const yy = y + k;
+      if (yy < 0 || yy >= STRIP_H || !edge[yy]) continue;
+      const g = Math.exp(-(k * k) / (2 * (RAD / 2) ** 2));
+      for (let ch = 0; ch < 3; ch++) acc[ch] += rgb[yy * 3 + ch] * g;
+      w += g;
+    }
+    const o = (STRIP_H - 1 - y) * 4; // в текстуре низ — первая строка
+    for (let ch = 0; ch < 3; ch++) out[o + ch] = Math.round(acc[ch] / w);
+    out[o + 3] = Math.max(1, Math.round(edge[y] * 255));
   }
   const t = new THREE.DataTexture(out, 1, STRIP_H, THREE.RGBAFormat);
   t.colorSpace = THREE.SRGBColorSpace;
