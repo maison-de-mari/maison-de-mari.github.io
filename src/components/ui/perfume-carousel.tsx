@@ -6,7 +6,7 @@ import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/arom
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
-import { PerfumeRing } from "./perfume-ring/scene";
+import { PerfumeRing, type BottleModel } from "./perfume-ring/scene";
 import { CssRing } from "./perfume-ring/css-ring";
 
 /*
@@ -21,6 +21,15 @@ const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TG = "https://t.me/Maisondemari";
 const EASE = [0.22, 1, 0.36, 1] as const;
 const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
+
+/** Флаконы, у которых уже есть 3D-модель (Higgsfield Tripo H3.1 + этикетка из фото). Остальные — картинки. */
+const MODELS: Record<string, BottleModel> = {
+  "zielinski-rozen-tobacco-cedarwood-pepper": {
+    src: `${BASE}/models/zielinski-tobacco-hunyuan.glb`,
+    front: `${BASE}/models/zielinski-tobacco-front.webp`,
+  },
+  "bleu-de-chanel-parfum": { src: `${BASE}/models/bleu-de-chanel-tripo.glb`, front: `${BASE}/models/bleu-de-chanel-front.webp` },
+};
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
@@ -51,18 +60,23 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const Engine = engine === "css" ? CssRing : PerfumeRing;
-    const r = new Engine(
-      el,
-      items.map((a) => bottleSrc(a.slug)),
-      {
-        onFront: setFront,
-        onHover: () => {},
-        onPick: pick,
-        onEmpty: close,
-        onReady: () => setReady(true),
-      },
-    );
+    const images = items.map((a) => bottleSrc(a.slug));
+    const events = {
+      onFront: setFront,
+      onHover: () => {},
+      onPick: pick,
+      onEmpty: close,
+      onReady: () => setReady(true),
+    };
+    const r =
+      engine === "css"
+        ? new CssRing(el, images, events)
+        : new PerfumeRing(
+            el,
+            images,
+            events,
+            items.map((a) => MODELS[a.slug] ?? null),
+          );
     ring.current = r;
     return () => {
       r.dispose();

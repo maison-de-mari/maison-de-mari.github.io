@@ -125,13 +125,29 @@ export function alignToPhoto(renderer: THREE.WebGLRenderer, model: THREE.Object3
   return best;
 }
 
-/** Проецирует фото на лицевую сторону модели (после alignToPhoto). mix: 0 — как сгенерировано, 1 — с фото */
-export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: THREE.Texture) {
+/**
+ * Проецирует фото на лицевую сторону модели (после alignToPhoto). mix: 0 — как сгенерировано, 1 — с фото.
+ * frame — объект, вместе с которым модель потом двигается (в витрине — её стойка на кольце):
+ * проекция считается в его системе координат, поэтому этикетка едет вместе с флаконом.
+ * В момент вызова frame должен стоять в начале координат без поворота.
+ */
+export function projectPhoto(
+  model: THREE.Object3D,
+  img: HTMLImageElement,
+  tex: THREE.Texture,
+  frame?: THREE.Object3D,
+  /** зеркальная копия для отражения: гаснет книзу */
+  reflect = false,
+) {
   const { uv } = photoPixels(img);
   model.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(model, true);
   const box = new THREE.Vector4(b.min.x, b.min.y, b.max.x - b.min.x, b.max.y - b.min.y);
+  // центр по глубине и половина глубины — чтобы понимать, насколько точка «спереди»
+  const depth = new THREE.Vector2((b.min.z + b.max.z) / 2, (b.max.z - b.min.z) / 2);
   const mix = { value: 1 };
+  const dim = { value: 1 };
+  const toFrame = { value: new THREE.Matrix4() };
   const shaders: { uniforms: Record<string, THREE.IUniform> }[] = [];
 
   model.traverse((o) => {
@@ -143,48 +159,57 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
         sh.uniforms.uBox = { value: box };
         sh.uniforms.uUv = { value: uv };
         sh.uniforms.uMix = mix;
+        sh.uniforms.uDim = dim;
+        sh.uniforms.uToFrame = toFrame;
+        sh.uniforms.uReflect = { value: reflect ? 1 : 0 };
+        sh.uniforms.uDepth = { value: depth };
+        sh.uniforms.uTexH = { value: img.naturalHeight * uv.w };
         shaders.push(sh);
         sh.vertexShader = sh.vertexShader
-          .replace("#include <common>", "#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;")
+          .replace("#include <common>", "#include <common>\nuniform mat4 uToFrame;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;")
           .replace(
             "#include <project_vertex>",
-            "#include <project_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);",
+            "#include <project_vertex>\nvWPos = (uToFrame * modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(uToFrame) * mat3(modelMatrix) * objectNormal);",
           );
         sh.fragmentShader = sh.fragmentShader
           .replace(
             "#include <common>",
-            "#include <common>\nuniform sampler2D uFront;\nuniform vec4 uBox;\nuniform vec4 uUv;\nuniform float uMix;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;",
+            "#include <common>\nuniform sampler2D uFront;\nuniform vec4 uBox;\nuniform vec4 uUv;\nuniform float uMix;\nuniform float uDim;\nuniform float uReflect;\nuniform vec2 uDepth;\nuniform float uTexH;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;",
           )
           .replace(
             "#include <map_fragment>",
             `#include <map_fragment>
             vec2 fb = clamp(vec2((vWPos.x - uBox.x) / uBox.z, (vWPos.y - uBox.y) / uBox.w), 0.0, 1.0);
             vec3 wn = normalize(vWNrm);
-            // спереди — чёткое фото
-            float wf = smoothstep(0.3, 0.6, wn.z) * uMix;
-            vec4 pf = texture2D(uFront, uUv.xy + fb * uUv.zw);
+            // спереди — чёткое фото на всю переднюю половину флакона (так и снимает камера анфас: к краям
+            // фото сжимается). Решаем по положению, а не по наклону: у выдуманных букв и трубки, вылепленных
+            // в самой модели, стенки смотрят вбок — по наклону там проступала бы каша
+            float q = (vWPos.z - uDepth.x) / max(uDepth.y, 1e-4);
+            float wf = max(smoothstep(0.3, 0.6, wn.z), smoothstep(-0.1, 0.15, q)) * uMix;
+            // резкость фото выбираем по высоте флакона на экране: на рёбрах вылепленной трубки/букв
+            // автоматический выбор взял бы самый размытый уровень, и там выпадали бы буквы
+            float dy = max(abs(dFdx(fb.y)), abs(dFdy(fb.y)));
+            float lod = max(0.0, log2(dy * uTexH));
+            vec4 pf = textureLod(uFront, uUv.xy + fb * uUv.zw, lod);
             float photoW = wf * pf.a;
-            // бока и спина — средний цвет флакона на этой высоте (стекло, жидкость, крышка):
-            // усредняем фото поперёк, так что никакие буквы — ни свои, ни выдуманные — не проступают
-            // берём преобладающий цвет (медиана по яркости), чтобы тонкие золотые буквы не давали полос
-            vec4 smp[9];
-            float lum[9];
-            float ba = 0.0;
-            for (int k = 0; k < 9; k++) {
-              smp[k] = texture2D(uFront, uUv.xy + vec2(0.1 + 0.1 * float(k), fb.y) * uUv.zw, 3.0);
-              lum[k] = dot(smp[k].rgb, vec3(0.299, 0.587, 0.114)) + (1.0 - smp[k].a) * 10.0;
-              ba += smp[k].a;
+            // бока и спина — цвет КРАЯ флакона на этой высоте (стекло, жидкость, крышка), а не этикетки:
+            // этикетка не «оборачивается» вокруг флакона, и никакие буквы — ни свои, ни выдуманные — не проступают
+            vec4 smp[31];
+            int L = -1;
+            int Rr = -1;
+            for (int k = 0; k < 31; k++) {
+              smp[k] = texture2D(uFront, uUv.xy + vec2((float(k) + 0.5) / 31.0, fb.y) * uUv.zw, 2.0);
+              if (smp[k].a > 0.6) { if (L < 0) L = k; Rr = k; }
             }
-            ba /= 9.0;
             vec3 band = vec3(0.0);
-            float bn = 0.0;
-            for (int i = 0; i < 9; i++) {
-              int below = 0;
-              for (int j = 0; j < 9; j++) below += lum[j] < lum[i] ? 1 : 0;
-              if (below >= 2 && below <= 5) { band += smp[i].rgb; bn += 1.0; }
+            float ba = 0.0;
+            if (L >= 0) {
+              int l1 = min(L + 1, Rr);
+              int r1 = max(Rr - 1, L);
+              band = (smp[l1].rgb + smp[min(l1 + 1, Rr)].rgb + smp[r1].rgb + smp[max(r1 - 1, L)].rgb) * 0.25;
+              ba = 1.0;
             }
-            band /= max(bn, 1.0);
-            float restW = (1.0 - wf) * uMix * smoothstep(0.25, 0.6, ba);
+            float restW = (1.0 - wf) * uMix * ba;
             diffuseColor.rgb = mix(diffuseColor.rgb, band * 0.78, restW);
             diffuseColor.rgb = mix(diffuseColor.rgb, pf.rgb, photoW);
             float cleanW = max(photoW, restW);`,
@@ -198,8 +223,22 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
             "#include <normal_fragment_maps>",
             // ...и в карте рельефа
             "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, cleanW));",
+          )
+          .replace(
+            "#include <opaque_fragment>",
+            `#include <opaque_fragment>
+            // на фото свет уже есть: спереди почти не пересвечиваем его светом сцены,
+            // иначе проступает рельеф выдуманных букв, вылепленных в самой модели
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, pf.rgb, photoW * 0.85);
+            // затемнение: дальние флаконы на кольце и все остальные, когда выбран один
+            gl_FragColor.rgb *= uDim;
+            // отражение в лаке гаснет книзу (у зеркальной копии)
+            gl_FragColor.a *= mix(1.0, 1.0 - smoothstep(0.0, 0.34, fb.y), uReflect);`,
           );
       };
+      // в сгенерированных моделях попадаются треугольники «наизнанку» (по вылепленной трубке/буквам):
+      // с отсечением задних граней там была бы щель, сквозь которую видна задняя стенка — и буквы рвутся
+      mat.side = THREE.DoubleSide;
       mat.needsUpdate = true;
     });
   });
@@ -207,6 +246,13 @@ export function projectPhoto(model: THREE.Object3D, img: HTMLImageElement, tex: 
   return {
     setMix(v: number) {
       mix.value = v;
+    },
+    setDim(v: number) {
+      dim.value = v;
+    },
+    /** каждый кадр, если frame двигается */
+    update() {
+      if (frame) toFrame.value.copy(frame.matrixWorld).invert();
     },
   };
 }

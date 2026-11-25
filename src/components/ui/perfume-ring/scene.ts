@@ -1,5 +1,12 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { alignToPhoto, projectPhoto } from "./label-projection";
+
+/** 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) */
+export type BottleModel = { src: string; front: string };
+type Label = ReturnType<typeof projectPhoto>;
 
 /**
  * Круглая витрина Maison De Mari на three.js.
@@ -65,6 +72,8 @@ type Bottle = {
   dim: number;
   shown: number;
   loaded: boolean;
+  /** настоящая 3D-модель вместо плоской картинки (картинка остаётся невидимой — для кликов) */
+  model?: { pivot: THREE.Object3D; mirror: THREE.Object3D; label: Label; mirrorLabel: Label };
 };
 
 export class PerfumeRing {
@@ -110,7 +119,12 @@ export class PerfumeRing {
   private io: IntersectionObserver;
   private loadedCount = 0;
 
-  constructor(private host: HTMLElement, images: string[], private ev: RingEvents) {
+  constructor(
+    private host: HTMLElement,
+    images: string[],
+    private ev: RingEvents,
+    private models: (BottleModel | null)[] = [],
+  ) {
     this.n = images.length;
     this.step = (Math.PI * 2) / this.n;
     this.reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -174,13 +188,20 @@ export class PerfumeRing {
     const warm = new THREE.PointLight(0xd8a860, 6, 12, 1.5);
     warm.position.set(0, 2.2, 0);
     s.add(warm);
+    // мягкий фронтальный свет — для 3D-моделей (плоские картинки освещение не используют)
+    const fill = new THREE.DirectionalLight(0xfff0e0, 1.3);
+    fill.position.set(0, 5, 14);
+    s.add(fill);
 
     // подиум: тёмный лак с прозрачным лаковым слоем
     const podium = new THREE.Mesh(
       this.keep(new THREE.CylinderGeometry(R + 1.12, R + 1.22, 0.32, 180, 1)),
-      this.keep(new THREE.MeshPhysicalMaterial({ color: "#0e0806", roughness: 0.42, metalness: 0.05, clearcoat: 0.75, clearcoatRoughness: 0.22 })),
+      // depthWrite: false — отражения флаконов (они «под» лаком) рисуются поверх подиума,
+      // но по-прежнему прячутся за флаконами и моделями
+      this.keep(new THREE.MeshPhysicalMaterial({ color: "#0e0806", roughness: 0.42, metalness: 0.05, clearcoat: 0.75, clearcoatRoughness: 0.22, depthWrite: false })),
     );
     podium.position.y = -0.16;
+    podium.renderOrder = -2;
     s.add(podium);
 
     // золотой обод
@@ -281,7 +302,6 @@ export class PerfumeRing {
             fragmentShader: frag,
             transparent: true,
             depthWrite: false,
-            depthTest: reflect < 0.5,
             side: THREE.DoubleSide,
           }),
         );
@@ -324,11 +344,86 @@ export class PerfumeRing {
           mesh.visible = refl.visible = true;
           b.loaded = true;
           this.loaded();
+          const spec = this.models[i];
+          if (spec) this.loadModel(b, spec);
         },
         undefined,
         () => this.loaded(),
       );
     });
+  }
+
+  private gltf?: GLTFLoader;
+  private disposed = false;
+
+  /** Ставит на место картинки настоящую 3D-модель с этикеткой из фото */
+  private async loadModel(b: Bottle, spec: BottleModel) {
+    if (!this.gltf) {
+      this.gltf = new GLTFLoader();
+      this.gltf.setMeshoptDecoder(MeshoptDecoder);
+    }
+    try {
+      const img = new Image();
+      img.src = spec.front;
+      const [g, tex] = await Promise.all([this.gltf.loadAsync(spec.src), new THREE.TextureLoader().loadAsync(spec.front), img.decode()]);
+      if (this.disposed) return; // витрину уже убрали, пока грузилась модель
+      this.keep(tex);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+
+      const model = g.scene;
+      const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+      model.scale.setScalar(b.h / size.y);
+      alignToPhoto(this.renderer, model, img);
+      const box = new THREE.Box3().setFromObject(model, true);
+      const c = box.getCenter(new THREE.Vector3());
+      model.position.x -= c.x;
+      model.position.z -= c.z;
+      model.position.y -= box.min.y;
+      model.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        this.keep(m.geometry);
+        (Array.isArray(m.material) ? m.material : [m.material]).forEach((x) => {
+          (x as THREE.MeshStandardMaterial).envMapIntensity = 6; // окружение сцены приглушено ради лака
+          this.keep(x);
+        });
+      });
+
+      const pivot = new THREE.Object3D();
+      pivot.add(model);
+      pivot.updateMatrixWorld(true);
+      const label = projectPhoto(model, img, tex, pivot);
+
+      // отражение в лаке: зеркальная копия со своими (полупрозрачными) материалами
+      const copy = model.clone(true);
+      copy.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        const faint = (x: THREE.Material) => {
+          const y = this.keep(x.clone());
+          y.transparent = true;
+          y.opacity = 0.16;
+          y.depthWrite = false;
+          return y;
+        };
+        m.material = Array.isArray(m.material) ? m.material.map(faint) : faint(m.material);
+        m.renderOrder = 90;
+      });
+      const mirror = new THREE.Object3D();
+      mirror.add(copy);
+      mirror.updateMatrixWorld(true);
+      const mirrorLabel = projectPhoto(copy, img, tex, mirror, true);
+      mirror.scale.y = -1;
+
+      b.group.add(pivot, mirror);
+      b.model = { pivot, mirror, label, mirrorLabel };
+      b.mesh.material.uniforms.uOpacity.value = 0;
+      b.refl.visible = false;
+      this.loop();
+    } catch {
+      /* модель не загрузилась — остаётся картинка */
+    }
   }
 
   private loaded() {
@@ -570,12 +665,30 @@ export class PerfumeRing {
       if (Math.abs(b.lift - lift) > 1e-3 || Math.abs(b.dim - dim) > 1e-3 || (b.loaded && b.shown < 0.999)) moving = true;
 
       b.group.position.set(x, 0, z);
-      b.group.rotation.y = Math.atan2(cam.position.x - x, cam.position.z - z);
+      const yaw = Math.atan2(cam.position.x - x, cam.position.z - z);
+      b.group.rotation.y = yaw;
       b.mesh.position.y = b.lift;
       b.refl.position.y = -b.lift;
       const op = (0.42 + 0.58 * k) * b.shown * (isSel ? 1 : 1 - f * 0.55);
       b.mesh.material.uniforms.uDim.value = b.dim;
-      b.mesh.material.uniforms.uOpacity.value = op;
+      b.mesh.material.uniforms.uOpacity.value = b.model ? 0 : op;
+      if (b.model) {
+        // модель стоит лицом наружу кольца — на поворотах видно её бок;
+        // выбранная медленно покачивается, показывая объём
+        const sway = isSel && !this.reduce ? Math.sin(now / 1500) * 0.5 * f : 0;
+        const turn = a - yaw + sway;
+        const { pivot, mirror, label, mirrorLabel } = b.model;
+        pivot.position.y = b.lift;
+        pivot.rotation.y = turn;
+        mirror.position.y = -b.lift;
+        mirror.rotation.y = turn;
+        b.group.updateMatrixWorld(true);
+        label.update();
+        mirrorLabel.update();
+        const md = b.dim * Math.min(1, op * 1.4);
+        label.setDim(md);
+        mirrorLabel.setDim(md);
+      }
       b.refl.material.uniforms.uDim.value = b.dim;
       b.refl.material.uniforms.uOpacity.value = op * (1 - b.lift * 2.5);
       b.shadow.material.opacity = op * (0.85 - b.lift * 2.2);
@@ -591,6 +704,7 @@ export class PerfumeRing {
   }
 
   dispose() {
+    this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.visible = false;
