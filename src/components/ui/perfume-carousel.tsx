@@ -6,7 +6,7 @@ import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/arom
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
-import { PerfumeRing, type BottleModel } from "./perfume-ring/scene";
+import { PerfumeRing } from "./perfume-ring/scene";
 import { CssRing } from "./perfume-ring/css-ring";
 
 /*
@@ -23,19 +23,10 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
 
 /**
- * 3D-модель каждого флакона (Higgsfield Hunyuan3D / Tripo) + фото анфас для этикетки + карта материалов
- * (стекло, металл, бумага). Пока модель грузится или если не загрузилась — на её месте картинка.
+ * Флаконы на витрине — качественные фото (1400 px), неподвижно стоят лицом наружу кольца.
+ * 3D-модели (вариант со стеклом и жидкостью) сохранены в ветке variant-3d-glass — на сайте они лагали.
  */
-/** Флаконы, которые показываем созданным фото, а не 3D-моделью */
-const PHOTO_ONLY = new Set(["bleu-de-chanel-parfum"]);
-const modelOf = (slug: string): BottleModel | null =>
-  PHOTO_ONLY.has(slug)
-    ? null
-    : {
-        src: `${BASE}/models/${slug}.glb`,
-        front: `${BASE}/models/${slug}-front.webp`,
-        mask: `${BASE}/models/${slug}-mask.png`,
-      };
+const photoSrc = (slug: string) => `${BASE}/models/${slug}-front.webp`;
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
@@ -67,7 +58,7 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
     const el = host.current;
     if (!el) return;
     // флаконы «только фото» — в высоком разрешении (на крупном плане они без 3D-модели)
-    const images = items.map((a) => (PHOTO_ONLY.has(a.slug) ? `${BASE}/models/${a.slug}-front.webp` : bottleSrc(a.slug)));
+    const images = items.map((a) => photoSrc(a.slug));
     const events = {
       onFront: setFront,
       onHover: () => {},
@@ -82,7 +73,8 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
             el,
             images,
             events,
-            items.map((a) => modelOf(a.slug)),
+            [],
+            "outward",
           );
     ring.current = r;
     return () => {

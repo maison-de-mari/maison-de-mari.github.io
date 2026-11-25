@@ -41,10 +41,16 @@ uniform float uOpacity;
 uniform float uReflect;
 varying vec2 vUv;
 void main(){
-  vec4 c = texture2D(map, vUv);
+  // флакон стоит лицом наружу кольца: со спины видим не зеркальную этикетку, а тёмный силуэт
+  // (у отражения плоскость перевёрнута — у него «лицо» и «спина» меняются местами)
+  bool front = uReflect > 0.5 ? !gl_FrontFacing : gl_FrontFacing;
+  vec2 uv = front ? vUv : vec2(1.0 - vUv.x, vUv.y);
+  vec4 c = texture2D(map, uv);
   float a = c.a * uOpacity;
   if (uReflect > 0.5) a *= (1.0 - smoothstep(0.0, 0.36, vUv.y)) * 0.24;
-  gl_FragColor = vec4(c.rgb * uDim, a);
+  vec3 col = c.rgb;
+  if (!front) col = mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, 0.5) * 0.3;
+  gl_FragColor = vec4(col * uDim, a);
   #include <colorspace_fragment>
 }`;
 
@@ -152,6 +158,7 @@ export class PerfumeRing {
     images: string[],
     private ev: RingEvents,
     private models: (BottleModel | null)[] = [],
+    private facing: "camera" | "outward" = "camera",
   ) {
     this.n = images.length;
     this.step = (Math.PI * 2) / this.n;
@@ -746,7 +753,9 @@ export class PerfumeRing {
       if (Math.abs(b.lift - lift) > 1e-3 || Math.abs(b.dim - dim) > 1e-3 || (b.loaded && b.shown < 0.999)) moving = true;
 
       b.group.position.set(x, 0, z);
-      const yaw = Math.atan2(cam.position.x - x, cam.position.z - z);
+      // «outward» — флакон неподвижно стоит лицом наружу кольца и едет вместе с ним;
+      // «camera» — всегда повёрнут к зрителю
+      const yaw = this.facing === "outward" ? a : Math.atan2(cam.position.x - x, cam.position.z - z);
       b.group.rotation.y = yaw;
       b.mesh.position.y = b.lift;
       b.refl.position.y = -b.lift;
