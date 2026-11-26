@@ -58,18 +58,18 @@ function Card({ b, row }: { b: GlassBottleSettings; row: RefObject<HTMLUListElem
   return (
     <li
       ref={card}
-      className="flex w-[68vw] max-w-[260px] shrink-0 snap-center flex-col items-center rounded-2xl bg-white/60 px-4 pt-6 pb-5 ring-1 ring-ink/5 sm:w-[260px]"
+      className="flex w-[68vw] max-w-[260px] shrink-0 snap-center flex-col items-center rounded-2xl bg-white/60 px-4 pt-8 pb-5 ring-1 ring-ink/5 sm:w-[260px]"
     >
       <GlassBottle
         color={b.color}
         fill={b.fill}
         label={`${BASE}${b.label}`}
-        labelAspect={b.labelAspect}
         labelAlt={`Этикетка ${a.brand} ${a.name}`}
-        cap={b.cap}
-        size={150}
+        shape={b.shape}
+        size={230}
         scroller={row}
         hoverArea={card}
+        className="mb-4"
       />
       <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.24em] text-gold">{a.brand}</p>
       <p className="mt-1 w-full truncate text-center text-[15px]">{a.name}</p>
