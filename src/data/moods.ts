@@ -28,4 +28,6 @@ export const MOOD_OF: Record<string, Mood> = {
   "bvlgari-le-gemme-tygar": "fresh",
   "zielinski-rozen-bergamot-green-tea-sandalwood": "fresh",
   "creed-wild-vetiver": "fresh",
+  "clive-christian-uncovered": "floral",
+  "clive-christian-out-of-the-blue": "gourmand",
 };

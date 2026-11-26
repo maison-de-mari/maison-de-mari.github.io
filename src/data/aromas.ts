@@ -15,6 +15,8 @@ export type Aroma = {
   variants?: { label: string; price: number }[];
   usd?: { label: string; usd: number }[];
   bottle?: string;
+  /** цена не указана — уточняется в Telegram */
+  ask?: boolean;
   description: { ru: string; uz: string };
   post: number;
 };
@@ -330,6 +332,30 @@ const list: Aroma[] = [
     },
     post: 16018,
     bottle: "100 ml — 200 $ (EDP), 320 $ (L’Exclusif)",
+  },
+  {
+    slug: "clive-christian-uncovered",
+    brand: "Clive Christian",
+    name: "Uncovered",
+    price: 0,
+    ask: true,
+    description: {
+      ru: "Альдегиды, эвкалипт и розовый перец, в сердце — бессмертник, ирис и иланг-иланг на солёном аккорде, шлейф белого мускуса, сандала и амбры. Чистый, светящийся аромат.",
+      uz: "Aldegidlar, evkalipt va pushti murch, qalbida — sho‘r akkorddagi o‘lmasgul, iris va ilang-ilang, oq mushk, sandal va ambra izi. Toza, yorqin atir.",
+    },
+    post: 0,
+  },
+  {
+    slug: "clive-christian-out-of-the-blue",
+    brand: "Clive Christian",
+    name: "Strange Heavens Out of the Blue",
+    price: 0,
+    ask: true,
+    description: {
+      ru: "Анис, кофе и розовый перец, жасмин и цветок апельсина, база из карамели, какао и дыма — тёплый гурманский аромат. Флакон расписал художник Доминго Запата.",
+      uz: "Arpabodiyon, qahva va pushti murch, yasmin va apelsin guli, karamel, kakao va tutun asosi — iliq gurman atir. Flakonni rassom Domingo Sapata bezagan.",
+    },
+    post: 0,
   },
 ];
 

@@ -38,7 +38,7 @@ const FLAT: Record<string, number> = {
   "mfk-724": 0.6, "bleu-de-chanel-parfum": 0.38,
 };
 
-const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $` : `от ${sum(minSum(a))}`);
+const priceFrom = (a: AromaWithImages) => (a.ask ? "цена по запросу" : a.usd ? `от ${minUsd(a)} $` : `от ${sum(minSum(a))}`);
 const notes = (list: readonly Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
 const chunk = <T,>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
@@ -350,8 +350,10 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
             </>
           ) : (
             <div className="mt-7">
-              <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Флакон под заказ</p>
-              <p className="mt-1 text-2xl font-light tabular-nums">{a.usd?.map((u) => `${u.label} — ${u.usd} $`).join(" · ")}</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-soft">{a.ask ? "Распив и флакон" : "Флакон под заказ"}</p>
+              <p className="mt-1 text-2xl font-light tabular-nums">
+                {a.ask ? "Цена по запросу" : a.usd?.map((u) => `${u.label} — ${u.usd} $`).join(" · ")}
+              </p>
               <a href={TG} target="_blank" rel="noopener" className="mt-4 inline-flex h-12 items-center rounded-full bg-[linear-gradient(180deg,#c9a463,#9a7438)] px-7 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:brightness-110">
                 Заказать в Telegram
               </a>

@@ -110,6 +110,14 @@ export const NOTE = {
   cypriol: ["циприол", "sipriol"],
   akigalawood: ["акигалавуд", "akigalavud"],
   woods: ["древесные ноты", "yog‘och notalari"],
+  eucalyptus: ["эвкалипт", "evkalipt"],
+  immortelle: ["бессмертник", "o‘lmasgul"],
+  iris: ["ирис", "iris"],
+  ylangYlang: ["иланг-иланг", "ilang-ilang"],
+  saltAccord: ["солёный аккорд", "sho‘r akkord"],
+  moss: ["мох", "mox"],
+  anise: ["анис", "arpabodiyon"],
+  smoke: ["дым", "tutun"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type Note = keyof typeof NOTE;
@@ -388,5 +396,22 @@ export const DETAILS: Record<string, Details> = {
     heart: ["aromatic", "labdanum"],
     base: ["sandalwood", "cedar", "tonka", "vanilla"],
     wear: W.everyday,
+  },
+  "clive-christian-uncovered": {
+    kind: "scent",
+    family: F.floralAldehyde,
+    top: ["aldehydes", "eucalyptus", "pinkPepper", "bergamot"],
+    heart: ["immortelle", "iris", "saltAccord", "ylangYlang"],
+    base: ["whiteMusk", "sandalwood", "moss", "amber"],
+    wear: W.everyday,
+  },
+  "clive-christian-out-of-the-blue": {
+    kind: "scent",
+    family: F.orientalGourmand,
+    year: 2026,
+    top: ["anise", "coffee", "pinkPepper"],
+    heart: ["jasmine", "orangeBlossom"],
+    base: ["caramel", "smoke", "cacao"],
+    wear: W.evening,
   },
 };

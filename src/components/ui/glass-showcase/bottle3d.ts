@@ -12,8 +12,9 @@ import * as THREE from "three";
  * вложенные прозрачные объекты, с «настоящей» стенкой жидкость внутри пропала бы.
  */
 
-export type Finish = "glass" | "gold" | "silver" | "black" | "white";
-export type Part = { kind: "round" | "rect" | "dome"; top: number; bottom: number; width: number; depth?: number; finish: Finish };
+/** glass — горлышко (часть стеклянной оболочки); crystal — отдельная деталь из прозрачного стекла (крышка) */
+export type Finish = "glass" | "crystal" | "gold" | "silver" | "black" | "white";
+export type Part = { kind: "round" | "rect" | "dome" | "crown"; top: number; bottom: number; width: number; depth?: number; finish: Finish };
 export type Shape = {
   /** ширина / высота флакона на фото анфас */
   aspect: number;
@@ -23,7 +24,15 @@ export type Shape = {
   /** где на фото этикетка: доли ширины и высоты (x0, y0, x1, y1) */
   label?: [number, number, number, number];
 };
-export type Bottle3DSpec = { slug: string; color: string; fill?: number; label?: string; shape: Shape };
+export type Bottle3DSpec = {
+  slug: string;
+  color: string;
+  fill?: number;
+  label?: string;
+  /** этикетка — печать прямо на стекле (картинка с прозрачным фоном), а не бумага */
+  labelPrint?: boolean;
+  shape: Shape;
+};
 
 export const HT = 4.4; // высота флакона в единицах сцены
 const WALL = 0.075;
@@ -131,6 +140,17 @@ export function softboxEnv(renderer: THREE.WebGLRenderer) {
 }
 
 const FIN: Record<Exclude<Finish, "glass">, () => THREE.Material> = {
+  crystal: () =>
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      transmission: 1,
+      ior: 1.5,
+      thickness: 0.8,
+      roughness: 0.04,
+      attenuationColor: new THREE.Color(0xe4efea),
+      attenuationDistance: 1.4,
+      envMapIntensity: 1.3,
+    }),
   gold: () => new THREE.MeshStandardMaterial({ color: 0xd8b06a, metalness: 1, roughness: 0.24, envMapIntensity: 1.15 }),
   silver: () => new THREE.MeshStandardMaterial({ color: 0xd9d9d6, metalness: 1, roughness: 0.18 }),
   black: () => new THREE.MeshPhysicalMaterial({ color: 0x0c0b0d, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.2 }),
@@ -402,7 +422,15 @@ export function buildBottle(spec: Bottle3DSpec, bg: THREE.ColorRepresentation, e
     const pn = p.kind === "rect" ? 8 : 2;
     const bev = Math.min(0.04, (y1 - y0) * 0.2);
     let geo: THREE.BufferGeometry;
-    if (p.kind === "dome") {
+    if (p.kind === "crown") {
+      // корона: узкое основание, пышные «лепестки», перехват и шар наверху (по силуэту фото)
+      const h = y1 - y0;
+      const prof: [number, number][] = [
+        [0.66, 0], [0.8, 0.08], [0.96, 0.22], [1, 0.36], [0.95, 0.52], [0.72, 0.68], [0.3, 0.8],
+        [0.24, 0.84], [0.25, 0.9], [0.2, 0.96], [0.08, 1],
+      ];
+      geo = sweep(prof.map(([s, t]) => ({ a: pa * s + 1e-3, b: pb * s + 1e-3, n: 2, y: y0 + h * t })), true, true);
+    } else if (p.kind === "dome") {
       const hb = y0 + (y1 - y0) * 0.3;
       const rs: Ring[] = [
         { a: pa, b: pb, n: 2, y: y0 },
@@ -431,7 +459,12 @@ export function buildBottle(spec: Bottle3DSpec, bg: THREE.ColorRepresentation, e
     const yTop = Math.min((1 - y0f) * HT, straightTop - 0.02);
     const yBot = Math.max((1 - y1f) * HT, BASE * 0.6);
     const lh = yTop - yBot;
-    const lmat = keep(new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.75, side: THREE.DoubleSide }));
+    const lmat = keep(
+      spec.labelPrint
+        ? // печать на стекле: прозрачный фон, глянец
+          new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.25, transparent: true, depthWrite: false, side: THREE.FrontSide })
+        : new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.75, side: THREE.DoubleSide }),
+    );
     let lg: THREE.BufferGeometry;
     let label: THREE.Mesh;
     if (round) {
@@ -447,6 +480,7 @@ export function buildBottle(spec: Bottle3DSpec, bg: THREE.ColorRepresentation, e
     }
     keep(lg);
     label.position.y = (yTop + yBot) / 2;
+    if (spec.labelPrint) label.renderOrder = 7; // печать — поверх бликов стекла
     bottle.add(label);
   }
 
@@ -544,6 +578,8 @@ export function buildBottle(spec: Bottle3DSpec, bg: THREE.ColorRepresentation, e
   return {
     scene,
     state: st,
+    /** полуширина и полуглубина корпуса */
+    size: { a, b },
     /** камера под эту форму */
     fit(cam: THREE.PerspectiveCamera, aspect: number) {
       cam.aspect = aspect;

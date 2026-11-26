@@ -7,6 +7,8 @@ import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
+import { GlassRing } from "./glass-showcase/glass-ring";
+import type { Bottle3DSpec } from "./glass-showcase/bottle3d";
 import { quality, useQuality } from "@/lib/quality";
 import type { SolidSpec } from "./perfume-ring/solid-bottle";
 
@@ -59,12 +61,22 @@ const SHAPE: Record<string, SolidSpec> = {
   "bleu-de-chanel-parfum": { kind: "flat", depth: 0.38 },
 };
 const num = (i: number) => String(i + 1).padStart(2, "0");
-const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
+const priceFrom = (a: AromaWithImages) =>
+  a.ask ? "цена по запросу" : a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`;
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
 
-export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithImages[]; children?: React.ReactNode }) {
+export function PerfumeCarousel({
+  items = ALL,
+  glass,
+  children,
+}: {
+  items?: AromaWithImages[];
+  /** стеклянные 3D-флаконы (по одному на каждый аромат items) — витрина на них вместо фото */
+  glass?: Bottle3DSpec[];
+  children?: React.ReactNode;
+}) {
   const host = useRef<HTMLDivElement>(null);
-  const ring = useRef<PerfumeRing | null>(null);
+  const ring = useRef<PerfumeRing | GlassRing | null>(null);
   const frontBtn = useRef<HTMLButtonElement>(null);
   const [front, setFront] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
@@ -98,6 +110,15 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
       onEmpty: close,
       onReady: () => setReady(true),
     };
+    if (glass) {
+      // стеклянная витрина: рисует только при движении, поэтому одинаково для всех устройств
+      const g = new GlassRing(el, glass, events, BASE);
+      ring.current = g;
+      return () => {
+        g.dispose();
+        ring.current = null;
+      };
+    }
     const r = new PerfumeRing(
       el,
       images,
@@ -124,7 +145,7 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
       r.dispose();
       ring.current = null;
     };
-  }, [items, pick, close, tier]);
+  }, [items, glass, pick, close, tier]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -294,7 +315,7 @@ const rise: Variants = {
 
 function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; index: number; onClose: () => void; reduce: boolean }) {
   const d = DETAILS[a.slug];
-  const variants = a.usd ? [] : (a.variants ?? [{ label: "10 ml", price: a.price }]);
+  const variants = a.usd || a.ask ? [] : (a.variants ?? [{ label: "10 ml", price: a.price }]);
   const [v, setV] = useState(0);
   const items = useCart();
   const variant = variants[v];
@@ -404,6 +425,23 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
                 className="inline-flex h-12 items-center rounded-full bg-gold px-6 text-xs font-semibold uppercase tracking-[0.2em] text-night transition-[filter,transform] hover:brightness-110 active:scale-[.97]"
               >
                 Заказать в Telegram
+              </a>
+            </motion.div>
+          )}
+
+          {a.ask && (
+            <motion.div variants={rise} className="order-4 mt-4 flex flex-wrap items-center justify-between gap-4 lg:order-none lg:mt-5">
+              <div>
+                <span className="block text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Распив и флакон</span>
+                <span className="mt-1 block text-2xl font-light">Цена по запросу</span>
+              </div>
+              <a
+                href={TG}
+                target="_blank"
+                rel="noopener"
+                className="inline-flex h-12 items-center rounded-full bg-gold px-6 text-xs font-semibold uppercase tracking-[0.2em] text-night transition-[filter,transform] hover:brightness-110 active:scale-[.97]"
+              >
+                Узнать в Telegram
               </a>
             </motion.div>
           )}
