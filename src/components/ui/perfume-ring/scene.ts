@@ -1,13 +1,5 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { alignToPhoto, glassMaterial, projectPhoto } from "./label-projection";
 import { buildSolid, type SolidSpec } from "./solid-bottle";
-
-/** 3D-модель флакона: GLB + фото анфас (им заменяется сгенерированная этикетка) + карта материалов */
-export type BottleModel = { src: string; front: string; mask?: string };
-type Label = ReturnType<typeof projectPhoto>;
 
 /**
  * Круглая витрина Maison De Mari на three.js.
@@ -108,13 +100,6 @@ type Bottle = {
   loaded: boolean;
   /** объёмный флакон из той же картинки (вместо плоской) */
   solid?: ReturnType<typeof buildSolid>;
-  /** настоящая 3D-модель вместо плоской картинки (картинка остаётся невидимой — для кликов) */
-  model?: {
-    pivot: THREE.Object3D;
-    label: Label;
-    meshes: { mesh: THREE.Mesh; lite: THREE.Material; glass: THREE.Material }[];
-    refract: boolean;
-  };
 };
 
 export class PerfumeRing {
@@ -164,7 +149,6 @@ export class PerfumeRing {
     private host: HTMLElement,
     images: string[],
     private ev: RingEvents,
-    private models: (BottleModel | null)[] = [],
     private facing: "camera" | "outward" = "camera",
     private solids: (SolidSpec | null)[] = [],
   ) {
@@ -172,28 +156,27 @@ export class PerfumeRing {
     this.step = (Math.PI * 2) / this.n;
     this.reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }));
-    // стекло считает сцену дважды (второй раз — для преломления): на телефонах чуть ниже разрешение
+    // телефон: плотный экран и так сглаживает края — сглаживание (тяжёлое для видеокарты) не нужно
     this.touch = window.matchMedia("(pointer: coarse)").matches;
+    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !this.touch, alpha: true, powerPreference: "high-performance" }));
     this.dprMax = this.dpr = Math.min(window.devicePixelRatio || 1, this.touch ? 1.5 : 1.75);
     r.setPixelRatio(this.dpr);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
-    // стекло преломляет то, что за ним: этот кадр можно считать в половинном разрешении
-    r.transmissionResolutionScale = 0.5;
     const cv = r.domElement;
     cv.setAttribute("role", "img");
     cv.setAttribute("aria-label", "Круглая витрина ароматов: потяните в сторону, чтобы повернуть, нажмите на флакон, чтобы открыть");
     cv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab;outline:none";
     host.appendChild(cv);
 
+    // отражения для стекла стола и золота — одно лёгкое «студийное» окружение
     const pmrem = new THREE.PMREMGenerator(r);
-    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environment = env;
-    this.scene.environmentIntensity = 0.14;
     this.studio = pmrem.fromScene(studioScene(), 0.02).texture;
-    this.disposables.push(pmrem, env, this.studio);
+    this.scene.environment = this.studio;
+    this.scene.environmentIntensity = 0.5;
+    pmrem.dispose();
+    this.disposables.push(this.studio);
 
     this.buildStage();
     this.buildBottles(images);
@@ -351,7 +334,8 @@ export class PerfumeRing {
     const flat = this.keep(new THREE.PlaneGeometry(1, 1));
     const shadowMap = this.keep(radial([[0, "rgba(0,0,0,0.62)"], [0.55, "rgba(0,0,0,0.22)"], [1, "rgba(0,0,0,0)"]], 128));
     const loader = new THREE.TextureLoader();
-    const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    // сильная анизотропная фильтрация не видна на флаконах, а видеокарту телефона нагружает
+    const maxAniso = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
 
     images.forEach((src, i) => {
       const mk = (reflect: number) =>
@@ -440,114 +424,18 @@ export class PerfumeRing {
     });
   }
 
-  private gltf?: GLTFLoader;
   private disposed = false;
   private studio!: THREE.Texture;
-  private glassReady = false;
   private touch = false;
+  private lastDraw = 0;
   // разрешение подстраивается под скорость устройства
   private dprMax = 2;
   private dpr = 2;
   private slow = 0;
 
-  /**
-   * Модели грузятся после картинок, по нескольку за раз и начиная с тех, что ближе к зрителю:
-   * витрина видна сразу, а флаконы один за другим «оживают» в 3D.
-   */
-  private loadModels() {
-    const order = this.bottles
-      .map((b, i) => ({ b, i, spec: this.models[i] }))
-      .filter((x) => x.spec && x.b.loaded)
-      .sort((p, q) => Math.cos(q.i * this.step + this.ring) - Math.cos(p.i * this.step + this.ring));
-    let next = 0;
-    const run = async () => {
-      while (next < order.length && !this.disposed) {
-        const { b, spec } = order[next++];
-        await this.loadModel(b, spec!);
-      }
-    };
-    for (let k = 0; k < 3; k++) run();
-  }
-
-  /** Ставит на место картинки настоящую 3D-модель: этикетка из фото, стекло/металл/бумага по карте */
-  private async loadModel(b: Bottle, spec: BottleModel) {
-    if (!this.gltf) {
-      this.gltf = new GLTFLoader();
-      this.gltf.setMeshoptDecoder(MeshoptDecoder);
-    }
-    try {
-      const img = new Image();
-      img.src = spec.front;
-      const tl = new THREE.TextureLoader();
-      const [g, tex, mask] = await Promise.all([
-        this.gltf.loadAsync(spec.src),
-        tl.loadAsync(spec.front),
-        spec.mask ? tl.loadAsync(spec.mask) : Promise.resolve(undefined),
-        img.decode(),
-      ]);
-      if (this.disposed) return; // витрину уже убрали, пока грузилась модель
-      this.keep(tex);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-      if (mask) this.keep(mask);
-
-      const model = g.scene;
-      const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
-      model.scale.setScalar(b.h / size.y);
-      alignToPhoto(this.renderer, model, img);
-      const box = new THREE.Box3().setFromObject(model, true);
-      const c = box.getCenter(new THREE.Vector3());
-      model.position.x -= c.x;
-      model.position.z -= c.z;
-      model.position.y -= box.min.y;
-      // окружение сцены приглушено ради лака подиума — моделям отражения нужны ярче
-      const ENV = 6;
-      const meshes: { mesh: THREE.Mesh; lite: THREE.Material; glass: THREE.Material }[] = [];
-      model.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (!m.isMesh) return;
-        this.keep(m.geometry);
-        const src = Array.isArray(m.material) ? m.material[0] : m.material;
-        if (!mask) {
-          m.material = this.keep(Object.assign(src, { envMapIntensity: ENV }));
-          return;
-        }
-        // два варианта стекла: лёгкое (блики, цвет) для общего плана и с преломлением — для тех,
-        // что ближе к зрителю, и для выбранного. Свет предметной съёмки: полосы софтбоксов дают блики по краям
-        const lite = this.keep(glassMaterial(src, 1.6, this.studio, false));
-        const glass = this.keep(glassMaterial(src, 1.6, this.studio, true));
-        src.dispose();
-        m.material = lite;
-        m.userData.alt = [glass];
-        meshes.push({ mesh: m, lite, glass });
-      });
-
-      const pivot = new THREE.Object3D();
-      pivot.add(model);
-      pivot.updateMatrixWorld(true);
-      const label = projectPhoto(model, img, tex, { frame: pivot, mask });
-
-      b.group.add(pivot);
-      b.model = { pivot, label, meshes, refract: false };
-      // отражение в лаке — та же лёгкая картинка, что у плоских флаконов (копия модели стоила бы ещё одну отрисовку)
-      b.mesh.material.uniforms.uOpacity.value = 0;
-      // стекло с преломлением собираем заранее, чтобы при выборе флакона не было рывка
-      if (!this.glassReady && meshes.length) {
-        this.glassReady = true;
-        meshes.forEach((x) => (x.mesh.material = x.glass));
-        this.renderer.compile(this.scene, this.camera);
-        meshes.forEach((x) => (x.mesh.material = x.lite));
-      }
-      this.loop();
-    } catch {
-      /* модель не загрузилась — остаётся картинка */
-    }
-  }
-
   private loaded() {
     if (++this.loadedCount === this.n) {
       this.ev.onReady();
-      this.loadModels();
     }
   }
 
@@ -713,6 +601,13 @@ export class PerfumeRing {
     const tick = (t: number) => {
       this.raf = 0;
       if (!this.visible || document.hidden) return;
+      // телефон: пока витрина просто медленно плывёт, хватает 30 кадров в секунду — вдвое меньше нагрузки и батареи
+      const idle = this.touch && !this.down && this.target === null && this.sel === null && this.focus < 0.001 && Math.abs(this.vel) < 0.01;
+      if (idle && t - this.lastDraw < 30) {
+        this.raf = requestAnimationFrame(tick);
+        return;
+      }
+      this.lastDraw = t;
       this.timer.update(t);
       const busy = this.frame(Math.min(this.timer.getDelta(), 0.05));
       if (busy) this.raf = requestAnimationFrame(tick);
@@ -809,7 +704,7 @@ export class PerfumeRing {
       b.refl.position.y = -b.lift;
       const op = (0.42 + 0.58 * k) * b.shown * (isSel ? 1 : 1 - f * 0.55);
       b.mesh.material.uniforms.uDim.value = b.dim;
-      b.mesh.material.uniforms.uOpacity.value = b.model || (b.solid && b.shown > 0.6) ? 0 : op;
+      b.mesh.material.uniforms.uOpacity.value = b.solid && b.shown > 0.6 ? 0 : op;
       if (b.solid) {
         b.solid.mesh.position.y = b.lift;
         // выбранный флакон на крупном плане медленно поворачивается — видно бок и объём
@@ -817,24 +712,6 @@ export class PerfumeRing {
         // появляется, когда картинка уже проявилась (в светлой теме «затухание» — это белая дымка)
         b.solid.mesh.visible = b.shown > 0.6;
         b.solid.setDim(b.dim);
-      }
-      if (b.model) {
-        // модель стоит лицом наружу кольца — на поворотах видно её бок;
-        // выбранная медленно покачивается, показывая объём
-        const sway = isSel && !this.reduce ? Math.sin(now / 1500) * 0.5 * f : 0;
-        const turn = a - yaw + sway;
-        const m = b.model;
-        m.pivot.position.y = b.lift;
-        m.pivot.rotation.y = turn;
-        b.group.updateMatrixWorld(true);
-        m.label.update();
-        m.label.setDim(b.dim * Math.min(1, op * 1.4));
-        // преломление — только у выбранного и у ближайших к зрителю (на телефоне — только у выбранного)
-        const refract = isSel || (!this.touch && this.sel === null && k > 0.86);
-        if (refract !== m.refract) {
-          m.refract = refract;
-          m.meshes.forEach((x) => (x.mesh.material = refract ? x.glass : x.lite));
-        }
       }
       b.refl.material.uniforms.uDim.value = b.dim;
       // отражение в стекле стола

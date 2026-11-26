@@ -20,6 +20,8 @@ const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TG = "https://t.me/Maisondemari";
 const SPRING = { type: "spring" as const, bounce: 0, duration: 0.55 };
 const img = (slug: string, view: "front" | "back" | "side") => `${BASE}/models/${slug}-${view}.webp`;
+/** облегчённое фото (640 px) — для полки, где флакон небольшой */
+const thumb = (slug: string) => `${BASE}/ring/${slug}-front.webp`;
 
 const MOOD_TITLE: Record<Mood, string> = {
   floral: "Цветочные",
@@ -127,7 +129,16 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                               whileHover={{ y: -6 }}
                               className="relative aspect-[2/3] w-full max-w-[170px] cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-gold"
                             >
-                              <TurnableBottle a={a} />
+                              {/* на полке — одна лёгкая картинка; фото для поворота грузятся только на странице аромата */}
+                              {/* eslint-disable-next-line @next/next/no-img-element -- статический экспорт, картинки уже подготовлены */}
+                              <img
+                                src={thumb(a.slug)}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                draggable={false}
+                                className="absolute inset-0 size-full object-contain object-bottom"
+                              />
                             </motion.button>
                           )}
                         </li>

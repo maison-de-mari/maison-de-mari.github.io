@@ -60,7 +60,8 @@ body {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+  /* на телефоне дымка неподвижна — анимация полноэкранного SVG перерисовывает весь экран */
   .scent-wisps .wisp {
     animation: none;
   }

@@ -8,7 +8,6 @@ import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
 import type { SolidSpec } from "./perfume-ring/solid-bottle";
-import { CssRing } from "./perfume-ring/css-ring";
 
 /*
  * Круглая 3D-витрина Maison De Mari (по мотивам Deck Rack Add To Cart).
@@ -21,13 +20,12 @@ import { CssRing } from "./perfume-ring/css-ring";
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TG = "https://t.me/Maisondemari";
 const EASE = [0.22, 1, 0.36, 1] as const;
-const bottleSrc = (slug: string) => `${BASE}/bottles/${slug}.webp`;
-
 /**
- * Флаконы на витрине — качественные фото (1400 px), неподвижно стоят лицом наружу кольца.
+ * Флаконы на витрине — фото, неподвижно стоят лицом наружу кольца. Для кольца берём облегчённые копии
+ * (public/ring, 640 px по высоте): в полном размере 24 флакона × 3 стороны занимали ~170 МБ видеопамяти.
  * 3D-модели (вариант со стеклом и жидкостью) сохранены в ветке variant-3d-glass — на сайте они лагали.
  */
-const photoSrc = (slug: string) => `${BASE}/models/${slug}-front.webp`;
+const ringSrc = (slug: string, view: "front" | "back" | "side" = "front") => `${BASE}/ring/${slug}-${view}.webp`;
 
 /**
  * Объём каждого флакона: круглый — тело вращения по силуэту фото; плоский — силуэт нужной толщины
@@ -63,11 +61,9 @@ const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) => (a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`);
 const notes = (list: Note[]) => list.map((n) => NOTE[n][0]).join(" · ");
 
-export type RingEngine = "webgl" | "css";
-
-export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { items?: AromaWithImages[]; engine?: RingEngine; children?: React.ReactNode }) {
+export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithImages[]; children?: React.ReactNode }) {
   const host = useRef<HTMLDivElement>(null);
-  const ring = useRef<PerfumeRing | CssRing | null>(null);
+  const ring = useRef<PerfumeRing | null>(null);
   const frontBtn = useRef<HTMLButtonElement>(null);
   const [front, setFront] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
@@ -89,8 +85,7 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    // флаконы «только фото» — в высоком разрешении (на крупном плане они без 3D-модели)
-    const images = items.map((a) => photoSrc(a.slug));
+    const images = items.map((a) => ringSrc(a.slug));
     const events = {
       onFront: setFront,
       onHover: () => {},
@@ -98,32 +93,24 @@ export function PerfumeCarousel({ items = ALL, engine = "webgl", children }: { i
       onEmpty: close,
       onReady: () => setReady(true),
     };
-    const r =
-      engine === "css"
-        ? new CssRing(el, images, events)
-        : new PerfumeRing(
-            el,
-            images,
-            events,
-            [],
-            "outward",
-            // к форме — фото сзади и (у плоских) сбоку
-            items.map((a) => {
-              const sp = SHAPE[a.slug];
-              if (!sp) return null;
-              return {
-                ...sp,
-                back: `${BASE}/models/${a.slug}-back.webp`,
-                side: sp.kind === "flat" ? `${BASE}/models/${a.slug}-side.webp` : undefined,
-              };
-            }),
-          );
+    const r = new PerfumeRing(
+      el,
+      images,
+      events,
+      "outward",
+      // к форме — фото сзади и (у плоских) сбоку
+      items.map((a) => {
+        const sp = SHAPE[a.slug];
+        if (!sp) return null;
+        return { ...sp, back: ringSrc(a.slug, "back"), side: sp.kind === "flat" ? ringSrc(a.slug, "side") : undefined };
+      }),
+    );
     ring.current = r;
     return () => {
       r.dispose();
       ring.current = null;
     };
-  }, [items, engine, pick, close]);
+  }, [items, pick, close]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -262,7 +249,7 @@ function CartPill() {
       animate={n ? { y: [0, -4, 1, 0] } : undefined}
       transition={{ duration: 0.6, ease: [0.3, 1.6, 0.5, 1] }}
       aria-live="polite"
-      className="pointer-events-auto inline-flex h-10 items-center gap-2.5 rounded-full bg-night/60 pl-4 pr-1.5 text-[11px] font-medium uppercase tracking-[0.22em] ring-1 ring-ink/15 backdrop-blur-md"
+      className="pointer-events-auto inline-flex h-10 items-center gap-2.5 rounded-full bg-white/85 pl-4 pr-1.5 text-[11px] font-medium uppercase tracking-[0.22em] ring-1 ring-ink/15"
     >
       Корзина
       <span className="relative grid h-7 min-w-7 place-items-center overflow-hidden rounded-full bg-gold px-2 text-xs font-semibold tracking-normal text-night tabular-nums">
@@ -318,7 +305,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.7, delay: reduce ? 0 : 0.7, ease: EASE } }}
         exit={{ opacity: 0, y: 12, filter: "blur(6px)", transition: { duration: 0.22 } }}
-        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-white/75 p-5 shadow-[0_30px_80px_-30px_rgba(70,45,20,.35)] ring-1 ring-ink/10 backdrop-blur-2xl backdrop-saturate-150 sm:p-7"
+        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-white/93 p-5 shadow-[0_30px_80px_-30px_rgba(70,45,20,.35)] ring-1 ring-ink/10 sm:p-7"
       >
         <motion.div ref={first} variants={stagger} custom={reduce ? 0 : 0.8} initial="hidden" animate="show" className="flex flex-col">
           <motion.p variants={rise} className="text-[11px] font-medium uppercase tracking-[0.28em] text-soft">
@@ -383,7 +370,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
                 </div>
                 <SprayButton
                   inCart={inCart}
-                  image={bottleSrc(a.slug)}
+                  image={ringSrc(a.slug)}
                   onToggle={() => cart.toggle({ slug: a.slug, label: variant.label, price: variant.price })}
                 />
               </motion.div>

@@ -19,6 +19,8 @@ export function Scent({ tone = "dark" }: { tone?: "dark" | "light" }) {
     if (!c || !host) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
+    // на телефоне искры не рисуем: полноэкранный холст поверх 3D-витрины — лишняя работа каждый кадр
+    if (window.matchMedia("(pointer: coarse)").matches) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const gold = tone === "dark" ? "232, 200, 140" : "184, 138, 62";
 
