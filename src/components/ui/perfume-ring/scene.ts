@@ -404,11 +404,14 @@ export class PerfumeRing {
                     })
                     .catch(() => undefined)
                 : Promise.resolve(undefined);
-            Promise.all([load(solidSpec.back), load(solidSpec.side)]).then(([back, side]) => {
+            // карта материалов — данные, а не цвет: без перевода цветового пространства
+            const loadMask = (u?: string) => (u ? tl.loadAsync(u).catch(() => undefined) : Promise.resolve(undefined));
+            Promise.all([load(solidSpec.back), load(solidSpec.side), loadMask(solidSpec.mask)]).then(([back, side, mask]) => {
               if (this.disposed) return;
               if (back) this.renderer.initTexture(back);
               if (side) this.renderer.initTexture(side);
-              const sb = buildSolid(img, tex, h, solidSpec, { back, side });
+              if (mask) this.renderer.initTexture(mask);
+              const sb = buildSolid(img, tex, h, solidSpec, { back, side, mask });
               this.disposables.push(sb);
               sb.mesh.userData.index = i;
               b.group.add(sb.mesh);
@@ -704,7 +707,9 @@ export class PerfumeRing {
       b.refl.position.y = -b.lift;
       const op = (0.42 + 0.58 * k) * b.shown * (isSel ? 1 : 1 - f * 0.55);
       b.mesh.material.uniforms.uDim.value = b.dim;
-      b.mesh.material.uniforms.uOpacity.value = b.solid && b.shown > 0.6 ? 0 : op;
+      const solidOn = !!b.solid && b.shown > 0.6;
+      b.mesh.material.uniforms.uOpacity.value = solidOn ? 0 : op;
+      b.mesh.visible = !solidOn; // не рисуем зря невидимую картинку под объёмным флаконом
       if (b.solid) {
         b.solid.mesh.position.y = b.lift;
         // выбранный флакон на крупном плане медленно поворачивается — видно бок и объём
@@ -720,6 +725,7 @@ export class PerfumeRing {
       // прозрачное рисуем от дальнего к ближнему
       const order = Math.round(k * 200);
       b.mesh.renderOrder = 400 + order;
+      b.solid?.setOrder(600 + order * 2);
       b.refl.renderOrder = 100 + order;
       b.shadow.renderOrder = 50;
     });

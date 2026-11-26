@@ -102,7 +102,12 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
       items.map((a) => {
         const sp = SHAPE[a.slug];
         if (!sp) return null;
-        return { ...sp, back: ringSrc(a.slug, "back"), side: sp.kind === "flat" ? ringSrc(a.slug, "side") : undefined };
+        return {
+          ...sp,
+          back: ringSrc(a.slug, "back"),
+          side: sp.kind === "flat" ? ringSrc(a.slug, "side") : undefined,
+          mask: `${BASE}/ring/${a.slug}-mask.png`,
+        };
       }),
     );
     ring.current = r;
