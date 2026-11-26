@@ -241,13 +241,26 @@ void main(){
 
   vec3 side = texture2D(strip, vec2(0.5, uv.y)).rgb;
 
-  // какая сторона: перёд, спина, правый/левый бок (у круглого — только перёд и спина)
+  // какая сторона: перёд, спина, правый/левый бок
   float wF, wB, wS;
   if (uFlat > 0.5) {
     // передняя грань слегка изогнута (толщина меняется по высоте) — берём с запасом
     wF = smoothstep(0.3, 0.55, n.z);
     wB = smoothstep(0.3, 0.55, -n.z);
     wS = smoothstep(0.55, 0.85, abs(n.x));
+  } else if (uHasSide > 0.5) {
+    // круглый: угол вокруг оси по положению точки — каждый вид занимает свою четверть,
+    // на стыке (±45°) короткий плавный переход, чтобы не было двоения
+    float az = atan(vPos.x / (uBox.z * 0.5), vPos.z / (uDepth * 0.5));
+    float c = cos(az);
+    float sn = sin(az);
+    wF = smoothstep(0.62, 0.78, c);
+    wB = smoothstep(0.62, 0.78, -c);
+    wS = smoothstep(0.62, 0.78, abs(sn));
+    float sum = max(wF + wB + wS, 1e-3);
+    wF /= sum;
+    wB /= sum;
+    wS /= sum;
   } else {
     wF = smoothstep(-0.05, 0.25, n.z);
     wB = smoothstep(-0.05, 0.25, -n.z);
@@ -259,7 +272,7 @@ void main(){
   // сзади смотрим с другой стороны — фото зеркально по ширине
   vec3 back = viewOr(backMap, vec2(1.0 - uv.x, uv.y), side, uHasBack, aB);
   // бок: по глубине; у правой и левой грани направления противоположны
-  float sx = n.x > 0.0 ? (uDepth * 0.5 - vPos.z) / uDepth : (vPos.z + uDepth * 0.5) / uDepth;
+  float sx = (uFlat > 0.5 ? n.x : vPos.x) > 0.0 ? (uDepth * 0.5 - vPos.z) / uDepth : (vPos.z + uDepth * 0.5) / uDepth;
   vec3 sideImg = viewOr(sideMap, vec2(clamp(sx, 0.0, 1.0), uv.y), side, uHasSide, aS);
 
   // свет для того, что окрашено цветом флакона (верх, низ, переходы): мягкий + блик + светлая кромка
@@ -340,7 +353,9 @@ export function buildSolid(img: HTMLImageElement, tex: THREE.Texture, H: number,
   const D =
     spec.kind === "flat"
       ? THREE.MathUtils.clamp(sideImg ? H * (sideImg.width / sideImg.height) : W * (spec.depth ?? 0.45), W * 0.2, W * 1.05)
-      : W;
+      : sideImg
+        ? THREE.MathUtils.clamp(H * (sideImg.width / sideImg.height), W * 0.5, W * 1.6)
+        : W;
 
   let geo: THREE.BufferGeometry;
   if (spec.kind === "round") {
@@ -354,6 +369,34 @@ export function buildSolid(img: HTMLImageElement, tex: THREE.Texture, H: number,
     }
     pts.push(new THREE.Vector2(0, Y(rows[0].y)));
     geo = new THREE.LatheGeometry(pts, 72);
+    // сечение по двум видам: спереди — ширина, сбоку — глубина на этой высоте. Так бантик, пробка,
+    // воротничок не превращаются в широкое кольцо вокруг флакона, а имеют свою настоящую толщину
+    if (sideImg) {
+      const prof = readSilhouette(sideImg).rows;
+      const sideAsp = sideImg.width / sideImg.height;
+      const at = (list: { y: number; l: number; r: number }[], t: number) => {
+        let lo = list[0];
+        let hi = list[list.length - 1];
+        for (const r of list) {
+          if (r.y <= t) lo = r;
+          if (r.y >= t) {
+            hi = r;
+            break;
+          }
+        }
+        const k = hi.y > lo.y ? (t - lo.y) / (hi.y - lo.y) : 0;
+        return (lo.r - lo.l) * (1 - k) + (hi.r - hi.l) * k;
+      };
+      const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        const t = THREE.MathUtils.clamp(1 - pos.getY(i) / H, 0, 1);
+        const front = at(rows, t) * W; // ширина спереди на этой высоте
+        const depth = at(prof, t) * sideAsp * H; // ширина сбоку
+        if (front > 1e-4) pos.setZ(i, pos.getZ(i) * THREE.MathUtils.clamp(depth / front, 0.25, 2));
+      }
+      pos.needsUpdate = true;
+      geo.computeVertexNormals();
+    }
   } else {
     // плоский: силуэт, выдавленный на нужную толщину, со скруглёнными рёбрами
     const shape = new THREE.Shape();

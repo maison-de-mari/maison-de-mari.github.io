@@ -83,7 +83,7 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
     ring.current?.select(null);
   }, []);
 
-  // лёгкий режим (слабая видеокарта, телефон): плоские фото лицом к зрителю, без стекла и самовращения
+  // лёгкий режим (слабая видеокарта, телефон): объёмные флаконы из фото без стеклянных слоёв и без самовращения
   const tier = useQuality();
 
   useEffect(() => {
@@ -102,17 +102,18 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
       el,
       images,
       events,
-      lite ? "camera" : "outward",
+      // флаконы неподвижно стоят лицом наружу кольца и показывают бока и спину, когда оно крутится
+      "outward",
       // к форме — фото сзади и (у плоских) сбоку
       items.map((a) => {
         const sp = SHAPE[a.slug];
-        if (lite) return null;
         if (!sp) return null;
         return {
           ...sp,
           back: ringSrc(a.slug, "back"),
-          side: sp.kind === "flat" ? ringSrc(a.slug, "side") : undefined,
-          mask: `${BASE}/ring/${a.slug}-mask.png`,
+          side: ringSrc(a.slug, "side"),
+          // стекло с жидкостью — только на сильной видеокарте; в лёгком режиме те же объёмные флаконы из фото
+          mask: lite ? undefined : `${BASE}/ring/${a.slug}-mask.png`,
         };
       }),
       lite,
