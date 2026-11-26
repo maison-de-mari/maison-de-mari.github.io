@@ -58,8 +58,15 @@ export function Scent({ tone = "dark" }: { tone?: "dark" | "light" }) {
 
     let raf = 0;
     let visible = true;
+    let lastDraw = 0;
     const draw = () => {
       const now = performance.now();
+      // не чаще 60 кадров в секунду (на экранах 120–240 Гц искры иначе считались бы в 2–4 раза чаще)
+      if (now - lastDraw < 15.5) {
+        raf = visible && !reduce ? requestAnimationFrame(draw) : 0;
+        return;
+      }
+      lastDraw = now;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       for (let i = specks.length - 1; i >= 0; i--) {

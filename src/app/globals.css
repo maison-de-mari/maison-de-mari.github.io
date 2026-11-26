@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./glass-bottle.css";
 
 /* Maison De Mari — светлая тема: тёплый белый фон, белый мрамор и золото; один шрифт Jost (рукописный — только логотип).
    Имена токенов прежние: night — фон, ink — текст. Тёмный вариант — в ветке variant-dark. */

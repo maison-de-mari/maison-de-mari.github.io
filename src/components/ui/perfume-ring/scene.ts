@@ -151,6 +151,10 @@ export class PerfumeRing {
     private ev: RingEvents,
     private facing: "camera" | "outward" = "camera",
     private solids: (SolidSpec | null)[] = [],
+    /** лёгкий режим: без самовращения, ниже разрешение; витрина рисует, только когда её трогают */
+    private lite = false,
+    /** кадры не успевают даже при наименьшем разрешении — пора на лёгкий режим */
+    private onSlow?: () => void,
   ) {
     this.n = images.length;
     this.step = (Math.PI * 2) / this.n;
@@ -159,7 +163,7 @@ export class PerfumeRing {
     // телефон: плотный экран и так сглаживает края — сглаживание (тяжёлое для видеокарты) не нужно
     this.touch = window.matchMedia("(pointer: coarse)").matches;
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !this.touch, alpha: true, powerPreference: "high-performance" }));
-    this.dprMax = this.dpr = Math.min(window.devicePixelRatio || 1, this.touch ? 1.5 : 1.75);
+    this.dprMax = this.dpr = Math.min(window.devicePixelRatio || 1, lite ? 1.25 : this.touch ? 1.5 : 1.75);
     r.setPixelRatio(this.dpr);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
@@ -606,7 +610,8 @@ export class PerfumeRing {
       if (!this.visible || document.hidden) return;
       // телефон: пока витрина просто медленно плывёт, хватает 30 кадров в секунду — вдвое меньше нагрузки и батареи
       const idle = this.touch && !this.down && this.target === null && this.sel === null && this.focus < 0.001 && Math.abs(this.vel) < 0.01;
-      if (idle && t - this.lastDraw < 30) {
+      // не чаще 60 кадров в секунду на любом экране: на 120–240 Гц иначе работы вдвое-вчетверо больше
+      if (t - this.lastDraw < (idle ? 30 : 15.5)) {
         this.raf = requestAnimationFrame(tick);
         return;
       }
@@ -625,6 +630,12 @@ export class PerfumeRing {
     if (dt > 0.026) this.slow++;
     else if (dt < 0.0145) this.slow--;
     let next = this.dpr;
+    if (this.slow > 24 && this.dpr <= 1) {
+      // разрешение уже минимальное, а кадры всё равно не успевают
+      this.slow = 0;
+      this.onSlow?.();
+      return;
+    }
     if (this.slow > 24 && this.dpr > 1) next = Math.max(1, this.dpr - 0.25);
     else if (this.slow < -240 && this.dpr < this.dprMax) next = Math.min(this.dprMax, this.dpr + 0.25);
     else return;
@@ -654,8 +665,8 @@ export class PerfumeRing {
         if (Math.abs(this.vel) > 0.01) moving = true;
         else {
           this.vel = 0;
-          if (!this.reduce && this.sel === null) {
-            // после касания ждём, потом витрина снова сама медленно плывёт
+          if (!this.reduce && !this.lite && this.sel === null) {
+            // после касания ждём, потом витрина снова сама медленно плывёт (в лёгком режиме — стоит)
             if (now - this.lastTouch > 2600) this.ring -= 0.075 * dt;
             moving = true;
           }
@@ -680,8 +691,9 @@ export class PerfumeRing {
       this.front = front;
       this.ev.onFront(front);
     }
-    const bob = this.reduce ? 0 : Math.sin(now / 900) * 0.025;
-    if (this.sel !== null && !this.reduce) moving = true; // выбранный флакон чуть парит
+    // в лёгком режиме выбранный флакон не парит — пока открыта карточка, видеокарта отдыхает
+    const bob = this.reduce || this.lite ? 0 : Math.sin(now / 900) * 0.025;
+    if (this.sel !== null && !this.reduce && !this.lite) moving = true; // выбранный флакон чуть парит
     this.bottles.forEach((b, i) => {
       const a = i * this.step + this.ring;
       const x = Math.sin(a) * R;

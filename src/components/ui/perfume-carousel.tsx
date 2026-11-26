@@ -7,6 +7,7 @@ import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
+import { quality, useQuality } from "@/lib/quality";
 import type { SolidSpec } from "./perfume-ring/solid-bottle";
 
 /*
@@ -82,9 +83,13 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
     ring.current?.select(null);
   }, []);
 
+  // лёгкий режим (слабая видеокарта, телефон): плоские фото лицом к зрителю, без стекла и самовращения
+  const tier = useQuality();
+
   useEffect(() => {
     const el = host.current;
-    if (!el) return;
+    if (!el || !tier) return;
+    const lite = tier === "lite";
     const images = items.map((a) => ringSrc(a.slug));
     const events = {
       onFront: setFront,
@@ -97,10 +102,11 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
       el,
       images,
       events,
-      "outward",
+      lite ? "camera" : "outward",
       // к форме — фото сзади и (у плоских) сбоку
       items.map((a) => {
         const sp = SHAPE[a.slug];
+        if (lite) return null;
         if (!sp) return null;
         return {
           ...sp,
@@ -109,13 +115,15 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
           mask: `${BASE}/ring/${a.slug}-mask.png`,
         };
       }),
+      lite,
+      () => quality.reportSlow(),
     );
     ring.current = r;
     return () => {
       r.dispose();
       ring.current = null;
     };
-  }, [items, pick, close]);
+  }, [items, pick, close, tier]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -143,7 +151,7 @@ export function PerfumeCarousel({ items = ALL, children }: { items?: AromaWithIm
       className="relative isolate h-[max(640px,100svh)] w-full overflow-hidden bg-night text-ink select-none"
     >
       <div aria-hidden className="absolute inset-0 -z-20 bg-[radial-gradient(120%_80%_at_50%_38%,#ffffff_0%,#f7f3ed_55%,#ebe3d6_100%)]" />
-      <Scent tone="light" />
+      {tier === "rich" && <Scent tone="light" />}
       <div ref={host} className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`} />
       {/* затемнение снизу — подпись читается поверх края подиума */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-night via-night/70 to-transparent" />
