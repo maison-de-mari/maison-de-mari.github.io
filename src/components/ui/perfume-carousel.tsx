@@ -7,8 +7,7 @@ import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
-import { GlassRing } from "./glass-showcase/glass-ring";
-import type { Bottle3DSpec } from "./glass-showcase/bottle3d";
+import { GlassRing, type RingSpec } from "./glass-showcase/glass-ring";
 import { quality, useQuality } from "@/lib/quality";
 import type { SolidSpec } from "./perfume-ring/solid-bottle";
 
@@ -72,7 +71,7 @@ export function PerfumeCarousel({
 }: {
   items?: AromaWithImages[];
   /** стеклянные 3D-флаконы (по одному на каждый аромат items) — витрина на них вместо фото */
-  glass?: Bottle3DSpec[];
+  glass?: RingSpec[];
   children?: React.ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);

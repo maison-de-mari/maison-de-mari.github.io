@@ -1,5 +1,19 @@
 import * as THREE from "three";
-import { buildBottle, HT, softboxEnv, type Bottle3D, type Bottle3DSpec } from "./bottle3d";
+import { buildBottle, HT, softboxEnv, type Bottle3DSpec } from "./bottle3d";
+import { buildPhotoBottle } from "./photo-bottle";
+import type { PhotoBottleData } from "@/data/photo-bottles";
+
+/** флакон витрины: стеклянный 3D (Bottle3DSpec) или фото-флакон с листа снимков */
+export type RingSpec = Bottle3DSpec | { photo: PhotoBottleData };
+type RingBottle = {
+  scene: THREE.Scene;
+  state: { ttx: number; ttz: number; yaw: number };
+  step(dt: number): void;
+  energy(): number;
+  dispose(): void;
+};
+const widthOf = (s: RingSpec) =>
+  "photo" in s ? ((Math.max(...s.photo.rows.map((r) => r[1])) * 2) / s.photo.size[1]) * HT : s.shape.aspect * HT;
 
 /**
  * Круглая витрина на фотореалистичных стеклянных флаконах (Three.js).
@@ -25,7 +39,7 @@ export class GlassRing {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
-  private bottles: { b: Bottle3D; g: THREE.Group; box: THREE.Box3 }[] = [];
+  private bottles: { b: RingBottle; g: THREE.Group; box: THREE.Box3 }[] = [];
   private env: THREE.Texture;
   private R: number;
   private step: number;
@@ -63,7 +77,7 @@ export class GlassRing {
   private ro: ResizeObserver;
   private io: IntersectionObserver;
 
-  constructor(private host: HTMLElement, specs: Bottle3DSpec[], private ev: GlassRingEvents, base = "") {
+  constructor(private host: HTMLElement, specs: RingSpec[], private ev: GlassRingEvents, base = "") {
     this.n = specs.length;
     this.slots = Math.max(3, this.n);
     this.step = (Math.PI * 2) / this.slots;
@@ -83,20 +97,38 @@ export class GlassRing {
     this.scene.environment = this.env;
 
     // флаконы по кругу: радиус — чтобы соседние не касались
-    const sizes = specs.map((s) => s.shape.aspect * HT);
+    const sizes = specs.map(widthOf);
     const maxW = Math.max(...sizes);
-    this.R = Math.max(maxW * 1.05, (maxW * 1.6) / (2 * Math.sin(this.step / 2)));
+    const avgW = sizes.reduce((x, y) => x + y, 0) / sizes.length;
+    // мало флаконов — просторно; много — по средней ширине, чтобы кольцо не разрасталось из-за самых широких
+    const gap = this.n <= 3 ? maxW * 1.6 : avgW * 1.3;
+    this.R = Math.max(maxW * 1.05, gap / (2 * Math.sin(this.step / 2)));
     this.buildTable();
 
     const loader = new THREE.TextureLoader();
-    let pending = specs.filter((s) => s.label).length + specs.filter((s) => s.photoCap).length;
+    let pending = specs.reduce((n, s) => n + ("photo" in s ? 2 : (s.label ? 1 : 0) + (s.photoCap ? 1 : 0)), 0);
     const done = () => {
       if (--pending <= 0) this.ev.onReady();
       this.force = true;
       this.loop();
     };
     if (!pending) queueMicrotask(() => this.ev.onReady());
+    const tload = (url: string, srgb: boolean) => {
+      const t = loader.load(`${base}${url}`, done, undefined, done);
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 8;
+      this.extra.push(t);
+      return t;
+    };
     specs.forEach((spec) => {
+      if ("photo" in spec) {
+        const pb = buildPhotoBottle(spec.photo, HT, tload(spec.photo.sheet, true), tload(spec.photo.glass, false));
+        const g = new THREE.Group();
+        [...pb.scene.children].forEach((c) => g.add(c));
+        this.scene.add(g);
+        this.bottles.push({ b: pb, g, box: new THREE.Box3() });
+        return;
+      }
       let tex: THREE.Texture | undefined;
       if (spec.label) {
         tex = loader.load(`${base}${spec.label}`, done, undefined, done);
