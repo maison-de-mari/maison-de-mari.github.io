@@ -18,6 +18,12 @@
 
 :root {
   color-scheme: light;
+  /* курсор-фонарь (cursor-glow.tsx): на светлой бумаге — тёплый золотистый ореол */
+  --glow-a: rgba(255, 200, 120, 0.28);
+  --glow-b: rgba(255, 196, 110, 0.1);
+  --glow-blend: multiply;
+  --glow-dark: rgba(0, 0, 0, 0);
+  --glow-dark-on: 0;
   /* для перенесённых компонентов в стиле shadcn */
   --color-background: var(--color-night);
   --color-foreground: var(--color-ink);
@@ -33,6 +39,12 @@ html[data-theme="dark"] {
   --color-gold: #c9a463;
   --color-paper: #262524;
   --color-card: #302e2c;
+  /* в темноте — настоящий фонарь: светлый ореол и затемнение вокруг */
+  --glow-a: rgba(255, 214, 150, 0.32);
+  --glow-b: rgba(255, 190, 110, 0.12);
+  --glow-blend: screen;
+  --glow-dark: rgba(8, 7, 6, 0.42);
+  --glow-dark-on: 1;
 }
 
 /* на время смены темы цвета перетекают плавно */
