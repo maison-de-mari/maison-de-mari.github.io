@@ -18,10 +18,11 @@
 
 :root {
   color-scheme: light;
-  /* свечение курсора (cursor-glow.tsx): мягкое белое, едва заметное */
-  --glow-a: rgba(255, 255, 255, 0.55);
-  --glow-b: rgba(255, 255, 255, 0.2);
-  --glow-blend: normal;
+  /* свечение курсора (cursor-glow.tsx): мягкий естественный свет — нейтрально-белый, плавно гаснет к краям */
+  --glow-a: rgba(255, 253, 248, 0.8);
+  --glow-b: rgba(255, 252, 246, 0.34);
+  --glow-c: rgba(255, 251, 244, 0.1);
+  --glow-blend: screen;
   /* для перенесённых компонентов в стиле shadcn */
   --color-background: var(--color-night);
   --color-foreground: var(--color-ink);
@@ -37,9 +38,10 @@ html[data-theme="dark"] {
   --color-gold: #c9a463;
   --color-paper: #262524;
   --color-card: #302e2c;
-  /* в темноте то же белое свечение — чуть слабее */
-  --glow-a: rgba(255, 255, 255, 0.09);
-  --glow-b: rgba(255, 255, 255, 0.035);
+  /* в темноте тот же свет — мягкий отсвет на графите */
+  --glow-a: rgba(255, 250, 240, 0.17);
+  --glow-b: rgba(255, 248, 236, 0.07);
+  --glow-c: rgba(255, 246, 232, 0.022);
   --glow-blend: screen;
 }
 

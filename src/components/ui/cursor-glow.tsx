@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { gsap, useGSAP } from "@/lib/gsap";
 
 /**
- * Свечение курсора (только с мышью): мягкое белое пятно света, едва заметное, плавно следует за мышью.
+ * Свечение курсора (только с мышью): мягкий естественный свет — нейтрально-белый, яркое ядро и плавный спад, следует за мышью.
  * Без цвета, без мерцания и без затемнения вокруг. Цвет и сила — токены --glow-* в globals.css (светлая/тёмная тема).
  * Только transform/opacity — без перерисовки страницы; клики проходят насквозь.
  */
@@ -49,9 +49,10 @@ export function CursorGlow() {
     <div ref={root} aria-hidden className="pointer-events-none invisible fixed inset-0 z-[45] overflow-hidden opacity-0">
       <div
         ref={halo}
-        className="absolute left-0 top-0 size-[360px] rounded-full"
+        className="absolute left-0 top-0 size-[480px] rounded-full"
         style={{
-          background: "radial-gradient(circle, var(--glow-a) 0%, var(--glow-b) 35%, transparent 68%)",
+          // затухание как у настоящего света: яркое ядро, быстрый спад, длинный мягкий хвост
+          background: "radial-gradient(circle, var(--glow-a) 0%, var(--glow-b) 14%, var(--glow-c) 36%, transparent 70%)",
           mixBlendMode: "var(--glow-blend)" as React.CSSProperties["mixBlendMode"],
         }}
       />
