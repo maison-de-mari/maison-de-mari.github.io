@@ -12,7 +12,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { RevealText } from "./reveal-text";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useReducedMotion, useTransform, type MotionValue } from "framer-motion";
 import { ChevronDown, ChevronLeft, Minus, Plus } from "lucide-react";
-import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
+import { aromas as ALL, FRONT_ONLY, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { MOODS, MOOD_OF, type Mood } from "@/data/moods";
 import { cart, sum, useCart } from "@/lib/cart";
@@ -20,7 +20,7 @@ import { cart, sum, useCart } from "@/lib/cart";
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TG = "https://t.me/Maisondemari";
 const SPRING = { type: "spring" as const, bounce: 0, duration: 0.55 };
-const img = (slug: string, view: "front" | "back" | "side") => `${BASE}/models/${slug}-${view}.webp`;
+const img = (slug: string, view: "front" | "back" | "side") => `${BASE}/models/${slug}-${FRONT_ONLY.has(slug) ? "front" : view}.webp`;
 /** облегчённое фото (640 px) — для полки, где флакон небольшой */
 const thumb = (slug: string) => `${BASE}/ring/${slug}-front.webp`;
 

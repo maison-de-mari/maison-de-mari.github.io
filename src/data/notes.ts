@@ -118,6 +118,19 @@ export const NOTE = {
   moss: ["мох", "mox"],
   anise: ["анис", "arpabodiyon"],
   smoke: ["дым", "tutun"],
+  mate: ["мате", "mate"],
+  firBalsam: ["пихтовый бальзам", "archa balzami"],
+  coriander: ["кориандр", "kashnich"],
+  rosemary: ["розмарин", "rozmarin"],
+  citrus: ["цитрусы", "sitruslar"],
+  tea: ["чай", "choy"],
+  roseWater: ["розовая вода", "atirgul suvi"],
+  florals: ["цветочные ноты", "gulli notalar"],
+  quince: ["айва", "behi"],
+  lilyOfTheValley: ["ландыш", "marvaridgul"],
+  pear: ["груша", "nok"],
+  starAnise: ["бадьян", "badyan"],
+  cashmeran: ["кашмеран", "kashmeran"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type Note = keyof typeof NOTE;
@@ -154,6 +167,11 @@ const F = {
   floralAldehyde: { ru: "Цветочный мускусный", uz: "Gulli-mushkli" },
   citrusGreen: { ru: "Цитрусовый зелёный", uz: "Sitrus-yashil" },
   aromaticFloral: { ru: "Цветочный ароматический", uz: "Gulli-aromatik" },
+  floral: { ru: "Цветочный", uz: "Gulli" },
+  woody: { ru: "Древесный", uz: "Yog‘ochli" },
+  woodyChypre: { ru: "Древесный шипровый", uz: "Yog‘och-shipr" },
+  orientalFloral: { ru: "Восточный цветочный", uz: "Sharqona gulli" },
+  floralMusk: { ru: "Цветочный пудровый", uz: "Gulli-upali" },
 } satisfies Record<string, L>;
 
 const W = {
@@ -414,4 +432,18 @@ export const DETAILS: Record<string, Details> = {
     base: ["caramel", "smoke", "cacao"],
     wear: W.evening,
   },
+  // ——— новинки: ноты — из постов канала
+  "clive-christian-matsukita": { kind: "scent", family: F.woodyChypre, top: ["bergamot", "pinkPepper", "nutmeg"], heart: ["mate", "jasmine", "sambac", "guaiac"], base: ["firBalsam", "woods", "musk", "amber"], wear: W.cold },
+  "creed-original-santal": { kind: "scent", family: F.woodySpicy, top: ["sandalwood", "juniper", "coriander", "cinnamon"], heart: ["lavender", "citrus", "ginger", "rosemary"], base: ["tonka", "vanilla"], wear: W.evening },
+  "guerlain-linstant-pour-homme": { kind: "scent", family: F.woody, conc: "Eau de Parfum", top: ["starAnise", "bergamot", "elemi", "lemon", "pepper"], heart: ["cacao", "sandalwood", "smoke", "tea", "jasmine"], base: ["patchouli"], wear: W.evening },
+  "dries-van-noten-raving-rose": { kind: "scent", family: F.floral, top: ["pinkPepper", "pepper"], heart: ["roseWater", "rose"], base: ["musk", "cashmeran"], wear: W.everyday },
+  "dries-van-noten-rosa-carnivora": { kind: "scent", family: F.floral, top: ["rose", "pinkPepper"], heart: ["vetiver", "florals"], base: ["patchouli", "labdanum"], wear: W.date },
+  "chopard-rose-seljuke": { kind: "scent", family: F.orientalFloral, top: ["rose"], heart: ["woods"], base: ["vanilla", "tonka"], wear: W.evening },
+  "chanel-coco-mademoiselle": { kind: "scent", family: F.orientalFloral, conc: "Eau de Parfum", top: ["orange", "bergamot"], heart: ["rose", "jasmine"], base: ["patchouli", "vanilla", "whiteMusk"], wear: W.everyday },
+  "chanel-chance-eau-tendre-edp": { kind: "scent", family: F.floralFruity, conc: "Eau de Parfum", top: ["grapefruit", "quince"], heart: ["jasmine", "rose"], base: ["whiteMusk"], wear: W.day },
+  "attar-collection-second-skin": { kind: "scent", family: F.floralMusk, top: ["citrus"], heart: ["peony", "rose", "lilyOfTheValley", "orangeBlossom"], base: ["musk"], wear: W.everyday },
+  "hermes-un-jardin-sur-le-toit": { kind: "scent", family: F.citrusGreen, top: ["apple", "pear"], heart: ["florals"], base: [], wear: W.day },
+  "vilhelm-chimilka": { kind: "scent", family: F.floralFruity, top: ["peach", "mandarin"], heart: [], base: [], wear: W.everyday },
+  "creed-iris-debonair": { kind: "scent", family: F.floral, top: ["citrus"], heart: ["iris"], base: ["woods"], wear: W.office },
+  "dolce-gabbana-devotion-intense": { kind: "scent", family: F.floralFruityGourmand, conc: "Eau de Parfum Intense", top: ["melon", "mandarin"], heart: ["orangeBlossom"], base: ["vanilla"], wear: W.evening },
 };
