@@ -11,7 +11,8 @@ import { cssColor, onTheme } from "@/lib/theme";
  * сверху и снизу — плавный переход в ровную бумагу, поэтому стыков не видно.
  * В покое — ровная бумага. Рельеф проступает только вокруг курсора мыши; когда мышь замирает,
  * он ещё немного держится и медленно тает (~4 с). Проявленное место привязано к странице: прокрутка ничего не проявляет.
- * На сенсорных экранах мыши нет — снимки не загружаются (только бумага). Кадры — только пока мышь двигается и рельеф тает.
+ * На телефоне (нет мыши) и при «уменьшить движение» — без проявления: картинка рельефа просто стоит на фоне, мягко,
+ * и едет с прокруткой (параллакс). Кадры — только пока мышь двигается и рельеф тает, или при прокрутке.
  */
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -36,11 +37,13 @@ uniform float scroll;  // прокрутка, px
 uniform float fade;    // общее «таяние» после остановки мыши (1 → 0)
 uniform vec3 paperC;   // цвет бумаги (светлая или тёмно-серая тема)
 uniform float lift;    // на тёмной бумаге рельеф проявляем сильнее
+uniform float dpr;     // плотность пикселей холста
+uniform float still;   // постоянная сила рельефа (телефон: картинка стоит), 0 — только вокруг мыши
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main(){
-  vec2 fc = gl_FragCoord.xy;
+  vec2 fc = gl_FragCoord.xy / dpr;               // в CSS-пикселях, как страница
   float py = scroll + res.y - fc.y;                 // точка на странице, сверху вниз
-  float k = smoothstep(0.0, 1.0, texture2D(mask, vec2(fc.x / page.x, py / page.y)).a) * fade;
+  float k = max(smoothstep(0.0, 1.0, texture2D(mask, vec2(fc.x / page.x, py / page.y)).a) * fade, still);
   vec3 paper = paperC;
   vec3 col = paper;
   if (k > 0.002) {
@@ -69,11 +72,14 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
     const el = ref.current;
     if (!el) return;
     // без мыши рельеф не нужен — только бумага
-    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // нет мыши или просили меньше движения — рельеф стоит, без проявления под курсором
+    const stillMode =
+      !window.matchMedia("(hover: hover) and (pointer: fine)").matches || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "low-power" });
-    renderer.setPixelRatio(1);
+    // телефон: картинка видна целиком — рисуем чётче (до 2×); с мышью рельеф мягкий, хватает 1×
+    const dpr = stillMode ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    renderer.setPixelRatio(dpr);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block";
     el.appendChild(renderer.domElement);
 
@@ -104,6 +110,8 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       fade: { value: 1 },
       paperC: { value: rgb(cssColor("--color-paper") || "#f1efea") },
       lift: { value: 0 },
+      still: { value: stillMode ? 0.62 : 0 },
+      dpr: { value: dpr },
     };
     uniforms.lift.value = document.documentElement.dataset.theme === "dark" ? 0.09 : 0;
     const scene = new THREE.Scene();
@@ -219,7 +227,7 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       lastMove = performance.now();
       if (!raf) raf = requestAnimationFrame(tick);
     };
-    window.addEventListener("pointermove", onPointer, { passive: true });
+    if (!stillMode) window.addEventListener("pointermove", onPointer, { passive: true });
 
     // прокрутка: только перерисовать (рельеф едет со страницей), ничего не проявляя
     let sraf = 0;
@@ -235,7 +243,7 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
 
     const resize = () => {
       renderer.setSize(el.clientWidth, el.clientHeight, false);
-      uniforms.res.value.set(renderer.domElement.width, renderer.domElement.height);
+      uniforms.res.value.set(renderer.domElement.width / dpr, renderer.domElement.height / dpr);
       fit();
       draw();
     };
