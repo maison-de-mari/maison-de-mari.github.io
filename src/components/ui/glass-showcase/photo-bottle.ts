@@ -74,14 +74,17 @@ void main(){
       float d1 = nearP.y - h1, d2 = farP.y - h2;
       float len = end - start;
       float frac = clamp(-min(d1, d2) / max(abs(d2 - d1), 0.15), 0.0, 1.0);
-      // на снимке флакон полный: ниже уровня — ровно снимок, выше — пустое стекло (светлее, с оттенком парфюма)
+      // на снимке флакон полный: ниже уровня — ровно снимок, выше — пустое стекло (светлее, с оттенком парфюма).
+      // уровень — у верха полости, так что пустой клин появляется только при наклоне
       float full = smoothstep(0.0, 1.0, frac);
       vec3 empty = mix(photo, mix(liq, vec3(1.0), 0.7), 0.3);
       vec3 c = mix(empty, photo, full);
       // поверхность, если видна сквозь стекло, и светлая линия мениска у стенки
+      // поверхность и мениск видны только пока жидкость качается — в покое флакон ровно как на снимке
+      float moving = clamp(length(slopeV) * 6.0 + wave * 0.5, 0.0, 1.0);
       float m = smoothstep(-1.2, 1.2, -min(d1, d2)) * (1.0 - smoothstep(-1.2, 1.2, -max(d1, d2)));
-      c = mix(c, mix(liq, vec3(1.0), 0.5), 0.25 * m);
-      c += mix(liq, vec3(1.0), 0.6) * 0.3 * exp(-abs(d1 + 0.4) * 0.78);
+      c = mix(c, mix(liq, vec3(1.0), 0.5), 0.25 * m * moving);
+      c += mix(liq, vec3(1.0), 0.6) * 0.3 * exp(-abs(d1 + 0.4) * 0.78) * moving;
       color = mix(photo, c, smoothstep(0.0, cav.z * 0.9, len) * clamp(g * 1.8, 0.0, 1.0));
     }
   }
@@ -102,7 +105,7 @@ function blob(stops: [number, string][]) {
   return t;
 }
 
-export function buildPhotoBottle(d: PhotoBottleData, HT: number, pic: THREE.Texture, gmap: THREE.Texture, fill = 0.75) {
+export function buildPhotoBottle(d: PhotoBottleData, HT: number, pic: THREE.Texture, gmap: THREE.Texture) {
   const HS = d.size[1];
   const k = HS / HT;
   const SEG = 72;
@@ -143,7 +146,8 @@ export function buildPhotoBottle(d: PhotoBottleData, HT: number, pic: THREE.Text
       vb: { value: new THREE.Vector2(...d.back) },
       cav: { value: new THREE.Vector4(...cav) },
       hasCav: { value: d.cavity ? 1 : 0 },
-      level: { value: cav[1] + (cav[3] - cav[1]) * fill },
+      // в покое парфюм до верха полости — без светлой полосы над уровнем
+      level: { value: cav[3] + 1 },
       slopeV: { value: new THREE.Vector2() },
       wave: { value: 0 },
       time: { value: 0 },

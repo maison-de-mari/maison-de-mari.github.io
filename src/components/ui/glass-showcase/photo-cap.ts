@@ -173,8 +173,10 @@ void main(){
     vec3 empty = mix(photo, vec3(0.55, 0.67, 0.89), 0.3);
     color = mix(empty, photo, smoothstep(0.0, 1.0, frac));
     float m = smoothstep(-1.2, 1.2, -min(d1, d2)) * (1.0 - smoothstep(-1.2, 1.2, -max(d1, d2)));
-    color = mix(color, vec3(0.41, 0.65, 0.90), 0.22 * m);
-    float rim = exp(-abs(d1 + 0.4) * 0.78); color += vec3(0.42, 0.54, 0.57) * 0.6 * rim;
+    // поверхность и мениск — только пока жидкость качается
+    float moving = clamp(length(slopeV) * 6.0 + wave * 0.5, 0.0, 1.0);
+    color = mix(color, vec3(0.41, 0.65, 0.90), 0.22 * m * moving);
+    float rim = exp(-abs(d1 + 0.4) * 0.78); color += vec3(0.42, 0.54, 0.57) * 0.6 * rim * moving;
     float wall = smoothstep(0.0, 4.0, end - start);
     color = mix(photo, color, wall);
   }
@@ -183,7 +185,7 @@ void main(){
   #include <colorspace_fragment>
 }`;
 
-export function buildPhotoBody(cap: PhotoCap, body: PhotoBody, HT: number, tex: THREE.Texture, fill: number) {
+export function buildPhotoBody(cap: PhotoCap, body: PhotoBody, HT: number, tex: THREE.Texture) {
   const k = cap.heightPx / HT;
   const SEG = 96;
   const pos: number[] = [];
@@ -214,7 +216,8 @@ export function buildPhotoBody(cap: PhotoCap, body: PhotoBody, HT: number, tex: 
       k: { value: k },
       // в оригинале y = 482 − p.y: переводим высоту над дном в его систему
       shift: { value: cap.bottomPx - 482 },
-      level: { value: -270 + 354 * fill },
+      // в покое парфюм до верха полости (83) — без светлой полосы; пустой клин только при наклоне
+      level: { value: 84 },
       slopeV: { value: new THREE.Vector2() },
       wave: { value: 0 },
       time: { value: 0 },

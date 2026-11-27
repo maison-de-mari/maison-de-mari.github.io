@@ -468,7 +468,7 @@ export function buildBottle(
     if (spec.photoBody) {
       // весь флакон — с листа снимков: свою оболочку, жидкость и трубку прячем
       bottle.children.forEach((c) => (c.visible = false));
-      photoBody = buildPhotoBody(spec.photoCap, spec.photoBody, HT, capTex, spec.fill ?? 0.75);
+      photoBody = buildPhotoBody(spec.photoCap, spec.photoBody, HT, capTex);
       bottle.add(photoBody.mesh);
       disposables.push(photoBody);
     }
