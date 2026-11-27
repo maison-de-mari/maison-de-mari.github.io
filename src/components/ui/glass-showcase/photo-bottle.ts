@@ -36,6 +36,7 @@ uniform float wave;
 uniform float time;
 uniform vec3 liq;
 uniform vec2 faceRange;
+uniform float round;
 varying vec3 vP;
 varying vec2 vN;
 varying vec3 vCam;
@@ -57,26 +58,31 @@ void main(){
     vec3 ray = -V; ray = sign(ray + vec3(0.000001)) * max(abs(ray), vec3(0.0001));
     vec3 lo = (vec3(-cav.x, cav.y, -cav.z) - p) / ray, hi = (vec3(cav.x, cav.w, cav.z) - p) / ray;
     vec3 a = min(lo, hi), b = max(lo, hi);
-    float start = max(0.0, max(a.x, max(a.y, a.z))), end = min(b.x, min(b.y, b.z));
+    float t0 = max(a.x, a.z), t1 = min(b.x, b.z);
+    if (round > 0.5) {
+      // у круглых флаконов полость — эллиптический цилиндр: к краям путь сквозь парфюм плавно короче
+      vec2 o = p.xz / cav.xz, dd = ray.xz / cav.xz;
+      float A = dot(dd, dd), B = dot(o, dd), C = dot(o, o) - 1.0, disc = B * B - A * C;
+      t0 = 1.0; t1 = 0.0;
+      if (disc > 0.0) { float q = sqrt(disc); t0 = (-B - q) / A; t1 = (-B + q) / A; }
+    }
+    float start = max(0.0, max(t0, a.y)), end = min(t1, b.y);
     if (end > start) {
       vec3 nearP = p + ray * start, farP = p + ray * end;
       float h1 = level + dot(slopeV, nearP.xz) + wave * sin(nearP.x * 0.038 + time) * cos(nearP.z * 0.035);
       float h2 = level + dot(slopeV, farP.xz) + wave * sin(farP.x * 0.038 + time) * cos(farP.z * 0.035);
       float d1 = nearP.y - h1, d2 = farP.y - h2;
+      float len = end - start;
       float frac = clamp(-min(d1, d2) / max(abs(d2 - d1), 0.15), 0.0, 1.0);
-      float depth = (end - start) * frac;
+      // на снимке флакон полный: ниже уровня — ровно снимок, выше — пустое стекло (светлее, с оттенком парфюма)
+      float full = smoothstep(0.0, 1.0, frac);
+      vec3 empty = mix(photo, mix(liq, vec3(1.0), 0.7), 0.3);
+      vec3 c = mix(empty, photo, full);
+      // поверхность, если видна сквозь стекло, и светлая линия мениска у стенки
       float m = smoothstep(-1.2, 1.2, -min(d1, d2)) * (1.0 - smoothstep(-1.2, 1.2, -max(d1, d2)));
-      // цвета из цвета парфюма: над уровнем — светлое пустое стекло, ниже — парфюм, густеет с толщиной
-      vec3 tint = mix(liq, vec3(1.0), 0.62);
-      vec3 empty = mix(photo, tint, 0.5);
-      vec3 fluid = mix(min(liq * 1.12, vec3(1.0)), liq * 0.42, 1.0 - exp(-depth * 0.02));
-      fluid += 0.27 * photo;
-      vec3 c = mix(empty, fluid, 1.0 - exp(-depth * 0.2));
-      c = mix(c, mix(liq, vec3(1.0), 0.45) + photo * 0.12, 0.46 * m);
-      float rim = exp(-abs(d1 + 0.4) * 0.78);
-      c += mix(liq, vec3(1.0), 0.6) * 0.5 * rim;
-      float wall = smoothstep(0.0, 4.0, end - start);
-      color = mix(photo, c, wall * 0.91 * g);
+      c = mix(c, mix(liq, vec3(1.0), 0.5), 0.25 * m);
+      c += mix(liq, vec3(1.0), 0.6) * 0.3 * exp(-abs(d1 + 0.4) * 0.78);
+      color = mix(photo, c, smoothstep(0.0, cav.z * 0.9, len) * clamp(g * 1.8, 0.0, 1.0));
     }
   }
   gl_FragColor = vec4(color, 1.0);
@@ -142,6 +148,7 @@ export function buildPhotoBottle(d: PhotoBottleData, HT: number, pic: THREE.Text
       wave: { value: 0 },
       time: { value: 0 },
       liq: { value: new THREE.Vector3(...d.liquid) },
+      round: { value: d.exp >= 0.99 ? 1 : 0 },
       faceRange: { value: d.exp >= 0.99 ? new THREE.Vector2(0.42, 0.62) : new THREE.Vector2(0.79, 0.985) },
     },
     vertexShader: vert,

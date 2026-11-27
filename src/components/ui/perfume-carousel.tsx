@@ -174,8 +174,8 @@ export function PerfumeCarousel({
       <div aria-hidden className="absolute inset-0 -z-20 bg-[radial-gradient(120%_80%_at_50%_38%,#ffffff_0%,#f7f3ed_55%,#ebe3d6_100%)]" />
       {tier === "rich" && <Scent tone="light" />}
       <div ref={host} className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`} />
-      {/* затемнение снизу — подпись читается поверх края подиума */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-night via-night/70 to-transparent" />
+      {/* затемнение снизу — подпись читается поверх края подиума; в крупном плане убираем, чтобы не закрывать флакон */}
+      <div aria-hidden className={`pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-night via-night/50 to-transparent transition-opacity duration-700 ${open ? "opacity-0" : "opacity-100"}`} />
 
       {/* шапка */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pt-4 sm:px-8 sm:pt-6">

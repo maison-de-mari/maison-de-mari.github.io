@@ -169,16 +169,14 @@ void main(){
     float h2 = h + dot(slope, farP.xz) + wave * sin(farP.x * 0.038 + time) * cos(farP.z * 0.035);
     float d1 = nearP.y - h1, d2 = farP.y - h2;
     float frac = clamp(-min(d1, d2) / max(abs(d2 - d1), 0.15), 0.0, 1.0);
-    float depth = (end - start) * frac;
+    // на снимке флакон полный: ниже уровня — ровно снимок (глубокий синий), выше — пустое стекло, чуть светлее
+    vec3 empty = mix(photo, vec3(0.55, 0.67, 0.89), 0.3);
+    color = mix(empty, photo, smoothstep(0.0, 1.0, frac));
     float m = smoothstep(-1.2, 1.2, -min(d1, d2)) * (1.0 - smoothstep(-1.2, 1.2, -max(d1, d2)));
-    vec3 empty = mix(photo, vec3(0.55, 0.67, 0.89), 0.50);
-    vec3 fluid = mix(vec3(0.15, 0.42, 0.76), vec3(0.026, 0.085, 0.396), 1.0 - exp(-depth * 0.026));
-    fluid += 0.27 * photo + vec3(0.018, 0.035, 0.105) * exp(-abs(y - 738.0) * 0.065);
-    color = mix(empty, fluid, 1.0 - exp(-depth * 0.20));
-    color = mix(color, vec3(0.41, 0.65, 0.90) + photo * 0.12, 0.46 * m);
-    float rim = exp(-abs(d1 + 0.4) * 0.78); color += vec3(0.42, 0.54, 0.57) * rim;
+    color = mix(color, vec3(0.41, 0.65, 0.90), 0.22 * m);
+    float rim = exp(-abs(d1 + 0.4) * 0.78); color += vec3(0.42, 0.54, 0.57) * 0.6 * rim;
     float wall = smoothstep(0.0, 4.0, end - start);
-    color = mix(photo, color, wall * 0.91);
+    color = mix(photo, color, wall);
   }
   color = mix(color, photo, label);
   gl_FragColor = vec4(color, 1.0);
