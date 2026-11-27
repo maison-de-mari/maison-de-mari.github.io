@@ -186,6 +186,9 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       if (e.clientX === lastClient.x && e.clientY === lastClient.y) return;
       lastClient = { x: e.clientX, y: e.clientY };
       fit();
+      const p = { x: e.clientX / MS, y: (e.clientY + window.scrollY) / MS };
+      // дрожание руки (пара пикселей) — не движение: мажем, только когда курсор ушёл от прошлого мазка на ≥12 px
+      if (last && Math.hypot(p.x - last.x, p.y - last.y) < 2) return;
       // если рельеф уже таял — подхватываем: оставшееся видно как есть, след продолжается
       if (uniforms.fade.value < 1) {
         mx.globalCompositeOperation = "destination-out";
@@ -194,7 +197,6 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
         mx.globalCompositeOperation = "source-over";
         uniforms.fade.value = 1;
       }
-      const p = { x: e.clientX / MS, y: (e.clientY + window.scrollY) / MS };
       const d = last ? Math.hypot(p.x - last.x, p.y - last.y) : 0;
       if (last && d < 40) {
         const steps = Math.min(12, Math.ceil(d / 3));

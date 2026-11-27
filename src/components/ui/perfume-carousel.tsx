@@ -87,6 +87,26 @@ export function PerfumeCarousel({
     setSel(i);
     ring.current?.select(i);
   }, []);
+  // в крупном плане — к соседнему аромату, не возвращаясь к витрине
+  const go = useCallback(
+    (d: number) => {
+      if (sel === null) return;
+      pick((sel + d + items.length) % items.length);
+    },
+    [sel, items.length, pick],
+  );
+  useEffect(() => {
+    if (sel === null) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      go(e.key === "ArrowRight" ? 1 : -1);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [sel, go]);
   const close = useCallback(() => {
     setSel((cur) => {
       if (cur !== null) window.setTimeout(() => frontBtn.current?.focus({ preventScroll: true }), 50);
@@ -241,6 +261,33 @@ export function PerfumeCarousel({
       {/* карточка аромата */}
       <AnimatePresence>
         {sel !== null && <Card key="card" aroma={items[sel]} index={sel} onClose={close} reduce={!!reduce} />}
+        {sel !== null && (
+          <motion.div
+            key="nav"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: { duration: 0.5, delay: reduce ? 0 : 0.8 } }}
+            exit={{ opacity: 0, transition: { duration: 0.15 } }}
+            className="pointer-events-none absolute inset-0 z-20"
+          >
+            {/* телефон — по краям на уровне флакона; компьютер — под флаконом, с номером */}
+            <div className="pointer-events-auto absolute top-[26%] left-2 lg:hidden">
+              <Arrow dir={-1} onClick={() => go(-1)} solid />
+            </div>
+            <div className="pointer-events-auto absolute top-[26%] right-2 lg:hidden">
+              <Arrow dir={1} onClick={() => go(1)} solid />
+            </div>
+            <div className="pointer-events-auto absolute bottom-8 left-[calc(50%-12vw)] hidden -translate-x-1/2 items-center gap-5 lg:flex">
+              <Arrow dir={-1} onClick={() => go(-1)} solid />
+              <span className="min-w-16 text-center text-[11px] font-medium uppercase tracking-[0.28em] text-soft tabular-nums">
+                {num(sel)} / {num(items.length - 1)}
+              </span>
+              <Arrow dir={1} onClick={() => go(1)} solid />
+            </div>
+            <p className="absolute bottom-3 left-[calc(50%-12vw)] hidden -translate-x-1/2 text-[10px] uppercase tracking-[0.24em] text-soft/70 lg:block">
+              Потяните флакон, чтобы повернуть
+            </p>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {children}
@@ -259,13 +306,13 @@ export function PerfumeCarousel({
   );
 }
 
-function Arrow({ dir, onClick }: { dir: 1 | -1; onClick: () => void }) {
+function Arrow({ dir, onClick, solid }: { dir: 1 | -1; onClick: () => void; solid?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={dir < 0 ? "Предыдущий аромат" : "Следующий аромат"}
-      className="grid size-11 shrink-0 place-items-center rounded-full text-gold ring-1 ring-gold/30 transition-[background-color,box-shadow,transform] duration-200 hover:bg-gold/10 hover:ring-gold/60 active:scale-95"
+      className={`grid size-11 shrink-0 place-items-center rounded-full text-gold ring-1 ring-gold/30 transition-[background-color,box-shadow,transform] duration-200 hover:bg-gold/10 hover:ring-gold/60 active:scale-95 ${solid ? "bg-white/85 shadow-[0_6px_20px_-8px_rgba(60,40,20,.35)] backdrop-blur-sm" : ""}`}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
         <path d={dir < 0 ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} strokeLinecap="round" strokeLinejoin="round" />

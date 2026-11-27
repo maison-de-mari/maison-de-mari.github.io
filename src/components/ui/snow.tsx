@@ -3,27 +3,38 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Падающий снег поверх сайта, как в объективе: дальние хлопья мелкие и резкие, ближние — крупные и размытые
- * (глубина резкости). Хлопья неровные, с лёгкой холодной тенью снизу — видны на светлом фоне.
- * Ветер: мягкие порывы качают весь снег, а движение мыши — как дуновение: хлопья рядом с курсором
- * сдувает по направлению движения, потом сопротивление воздуха возвращает их к спокойному падению.
- * Лёгкий: хлопья нарисованы заранее (спрайты), 2D-холст в разрешении 1×, не больше 60 кадров/с,
- * пауза на скрытой вкладке; при «уменьшить движение» снега нет. Клики проходят сквозь холст.
+ * Снег в три слоя, как в объективе:
+ *  • задний — мелкие резкие хлопья, медленно, ПОЗАДИ флаконов и текста (между фоном и страницей);
+ *  • средний — хлопья побольше, чуть мягче, поверх страницы;
+ *  • передний — редкие крупные размытые хлопья у самой «камеры», быстрые.
+ * Глубина видна по движению: при прокрутке и от «ветра» мыши ближние слои сдвигаются сильнее дальних.
+ * Мышь — как дуновение: хлопья рядом с курсором сдувает по направлению движения, потом воздух их тормозит.
+ * Лёгкий: хлопья нарисованы заранее (спрайты), 2D-холсты в разрешении 1×, ≤60 кадров/с, пауза на скрытой вкладке;
+ * при «уменьшить движение» снега нет. Клики проходят сквозь холсты.
  */
-type Flake = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  depth: number; // 0 — далеко, 1 — близко
-  fall: number; // скорость спокойного падения, px/с
-  ph: number;
-  spr: HTMLCanvasElement;
-  a: number;
+type Layer = {
+  count: number;
+  size: [number, number]; // радиус хлопка, px
+  blur: [number, number]; // размытие «не в фокусе», px
+  alpha: number;
+  fall: [number, number]; // скорость падения, px/с
+  sway: number; // размах покачивания, px
+  wind: number; // насколько слой слушается ветра и мыши
+  scroll: number; // параллакс прокрутки (1 — вместе со страницей)
+  back: boolean; // рисовать на заднем холсте (за страницей)
+  shade: number; // сила холодной тени — чтобы белое читалось на светлом фоне
 };
 
+const LAYERS: Layer[] = [
+  { count: 80, size: [1.4, 2.4], blur: [0, 0], alpha: 0.85, fall: [12, 22], sway: 7, wind: 0.35, scroll: 0.25, back: true, shade: 0.75 },
+  { count: 42, size: [2.4, 4], blur: [0.4, 1.2], alpha: 0.9, fall: [30, 50], sway: 16, wind: 0.8, scroll: 0.6, back: false, shade: 0.55 },
+  { count: 9, size: [10, 17], blur: [4, 7], alpha: 0.75, fall: [80, 115], sway: 30, wind: 1.4, scroll: 1.25, back: false, shade: 0.4 },
+];
+
+type Flake = { x: number; y: number; vx: number; vy: number; fall: number; ph: number; spr: HTMLCanvasElement; L: Layer };
+
 /** неровный хлопок: несколько мягких пятен, холодная тень снизу справа; blur — размытие «не в фокусе» */
-function flakeSprite(size: number, blur: number, seed: number) {
+function flakeSprite(size: number, blur: number, seed: number, shade: number) {
   let s = seed;
   const rnd = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
   const pad = Math.ceil(blur * 2.5 + size * 0.6 + 3);
@@ -39,11 +50,10 @@ function flakeSprite(size: number, blur: number, seed: number) {
     const d = size * (0.3 + rnd() * 0.35);
     blobs.push([Math.cos(a) * d, Math.sin(a) * d, size * (0.45 + rnd() * 0.3)]);
   }
-  // тень — на сантиметр ниже и правее, холодно-серая
   for (const [bx, by, br] of blobs) {
     const g = x.createRadialGradient(m + bx + size * 0.18, m + by + size * 0.22, 0, m + bx + size * 0.18, m + by + size * 0.22, br * 1.1);
-    g.addColorStop(0, "rgba(120,130,150,0.28)");
-    g.addColorStop(1, "rgba(120,130,150,0)");
+    g.addColorStop(0, `rgba(105,115,135,${shade})`);
+    g.addColorStop(1, "rgba(105,115,135,0)");
     x.fillStyle = g;
     x.fillRect(0, 0, c.width, c.height);
   }
@@ -58,51 +68,41 @@ function flakeSprite(size: number, blur: number, seed: number) {
   return c;
 }
 
-export function Snow({ count = 90 }: { count?: number }) {
-  const ref = useRef<HTMLCanvasElement>(null);
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+export function Snow() {
+  const backRef = useRef<HTMLCanvasElement>(null);
+  const frontRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const cv = ref.current;
-    if (!cv || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const ctx = cv.getContext("2d")!;
+    const cb = backRef.current;
+    const cf = frontRef.current;
+    if (!cb || !cf || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const xb = cb.getContext("2d")!;
+    const xf = cf.getContext("2d")!;
     const touch = window.matchMedia("(pointer: coarse)").matches;
-    const n = touch ? Math.round(count * 0.5) : count;
 
-    // спрайты по слоям глубины: [размер, размытие]
-    const layers: [number, number][] = [
-      [1.6, 0],
-      [2.4, 0],
-      [3.4, 0.4],
-      [5, 1.2],
-      [8, 3],
-      [13, 6],
-    ];
-    const sprites = layers.map(([sz, bl], li) => Array.from({ length: 4 }, (_, k) => flakeSprite(sz, bl, 11 + li * 97 + k * 31)));
+    // по 4 спрайта на слой, размеры внутри диапазона слоя
+    const sprites = LAYERS.map((L, li) =>
+      Array.from({ length: 4 }, (_, k) => flakeSprite(lerp(L.size[0], L.size[1], k / 3), lerp(L.blur[0], L.blur[1], k / 3), 17 + li * 131 + k * 29, L.shade)),
+    );
 
     let w = 0;
     let h = 0;
     const flakes: Flake[] = [];
-    const spawn = (top: boolean): Flake => {
-      // ближних мало, дальних много
-      const depth = Math.pow(Math.random(), 1.8);
-      const li = Math.min(layers.length - 1, Math.floor(depth * layers.length));
-      const fall = 16 + depth * 70;
-      return {
-        x: Math.random() * w,
-        y: top ? -30 - Math.random() * 80 : Math.random() * h,
-        vx: 0,
-        vy: fall,
-        depth,
-        fall,
-        ph: Math.random() * Math.PI * 2,
-        spr: sprites[li][Math.floor(Math.random() * 4)],
-        a: li >= 4 ? 0.55 : 0.75 + depth * 0.25,
-      };
+    const spawn = (L: Layer, li: number, top: boolean): Flake => {
+      const fall = lerp(L.fall[0], L.fall[1], Math.random());
+      const spr = sprites[li][Math.floor(Math.random() * 4)];
+      return { x: Math.random() * w, y: top ? -spr.height - Math.random() * 120 : Math.random() * h, vx: 0, vy: fall, fall, ph: Math.random() * 6.283, spr, L };
     };
     const resize = () => {
-      w = cv.width = window.innerWidth;
-      h = cv.height = window.innerHeight;
-      if (!flakes.length) for (let i = 0; i < n; i++) flakes.push(spawn(false));
+      w = cb.width = cf.width = window.innerWidth;
+      h = cb.height = cf.height = window.innerHeight;
+      if (!flakes.length)
+        LAYERS.forEach((L, li) => {
+          const n = Math.max(3, Math.round(L.count * (touch ? 0.5 : 1)));
+          for (let i = 0; i < n; i++) flakes.push(spawn(L, li, false));
+        });
     };
     resize();
     window.addEventListener("resize", resize);
@@ -113,9 +113,8 @@ export function Snow({ count = 90 }: { count?: number }) {
       const now = performance.now();
       if (mouse.x > -1e3) {
         const dt = Math.max(8, now - mouse.t) / 1000;
-        const k = 0.35;
-        mouse.vx += ((e.clientX - mouse.x) / dt - mouse.vx) * k;
-        mouse.vy += ((e.clientY - mouse.y) / dt - mouse.vy) * k;
+        mouse.vx += ((e.clientX - mouse.x) / dt - mouse.vx) * 0.35;
+        mouse.vy += ((e.clientY - mouse.y) / dt - mouse.vy) * 0.35;
       }
       mouse.x = e.clientX;
       mouse.y = e.clientY;
@@ -123,58 +122,71 @@ export function Snow({ count = 90 }: { count?: number }) {
     };
     window.addEventListener("pointermove", onMove, { passive: true });
 
+    // прокрутка: слои сдвигаются с разной силой — глубина
+    let lastScroll = window.scrollY;
+    let scrollD = 0;
+    const onScroll = () => {
+      scrollD += window.scrollY - lastScroll;
+      lastScroll = window.scrollY;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+
     let raf = 0;
     let prev = 0;
     let t = 0;
-    const R = 170; // радиус дуновения, px
+    const R = 180; // радиус дуновения, px
+    const idx = new Map(LAYERS.map((L, i) => [L, i]));
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (prev && now - prev < 15.5) return;
       const dt = Math.min(0.05, prev ? (now - prev) / 1000 : 0.016);
       prev = now;
       t += dt;
-      // ветер мыши затихает
       const fade = Math.exp(-dt * 5);
       mouse.vx *= fade;
       mouse.vy *= fade;
       const ms = Math.hypot(mouse.vx, mouse.vy);
-      // общий ветер: медленные порывы
-      const gust = Math.sin(t * 0.21) * 9 + Math.sin(t * 0.53 + 1.3) * 5;
+      const gust = Math.sin(t * 0.21) * 9 + Math.sin(t * 0.53 + 1.3) * 5; // медленные порывы
+      const sd = scrollD;
+      scrollD = 0;
+      const drag = 1 - Math.exp(-dt * 1.6);
 
-      ctx.clearRect(0, 0, w, h);
+      xb.clearRect(0, 0, w, h);
+      xf.clearRect(0, 0, w, h);
       for (let i = 0; i < flakes.length; i++) {
         const f = flakes[i];
-        const sway = Math.sin(t * (0.5 + f.depth * 0.6) + f.ph) * (10 + f.depth * 18);
-        const tx = (gust + sway) * (0.4 + f.depth);
-        // сопротивление воздуха тянет к спокойному падению
-        const drag = 1 - Math.exp(-dt * 1.6);
-        f.vx += (tx - f.vx) * drag;
+        const L = f.L;
+        const sway = Math.sin(t * (0.5 + L.wind * 0.3) + f.ph) * L.sway;
+        f.vx += ((gust + sway) * L.wind - f.vx) * drag;
         f.vy += (f.fall - f.vy) * drag;
-        // дуновение от курсора: по направлению движения мыши, сильнее рядом и у ближних хлопьев
         if (ms > 30) {
           const dx = f.x - mouse.x;
           const dy = f.y - mouse.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < R * R) {
-            const fall = 1 - Math.sqrt(d2) / R;
-            const k = fall * fall * (0.5 + f.depth) * dt * 7;
-            f.vx += mouse.vx * k + (dx / (Math.sqrt(d2) + 1)) * ms * k * 0.15;
-            f.vy += mouse.vy * k + (dy / (Math.sqrt(d2) + 1)) * ms * k * 0.15;
+            const dist = Math.sqrt(d2);
+            const near = 1 - dist / R;
+            const k = near * near * L.wind * dt * 6;
+            f.vx += mouse.vx * k + (dx / (dist + 1)) * ms * k * 0.15;
+            f.vy += mouse.vy * k + (dy / (dist + 1)) * ms * k * 0.15;
           }
         }
         f.x += f.vx * dt;
-        f.y += f.vy * dt;
+        f.y += f.vy * dt - sd * L.scroll;
         const half = f.spr.width / 2;
-        if (f.y - half > h || f.y < -400) {
-          flakes[i] = spawn(true);
+        if (f.y - half > h + 40 || f.y + half < -260) {
+          flakes[i] = spawn(L, idx.get(L)!, f.y > 0);
+          if (f.y + half < -260) flakes[i].y = h + half; // ушёл вверх при прокрутке — возвращаем снизу
           continue;
         }
         if (f.x < -half - 40) f.x += w + half * 2 + 80;
         else if (f.x > w + half + 40) f.x -= w + half * 2 + 80;
-        ctx.globalAlpha = f.a;
+        const ctx = L.back ? xb : xf;
+        ctx.globalAlpha = L.alpha;
         ctx.drawImage(f.spr, f.x - half, f.y - half);
       }
-      ctx.globalAlpha = 1;
+      xb.globalAlpha = 1;
+      xf.globalAlpha = 1;
     };
     const start = () => {
       if (!raf && !document.hidden) {
@@ -195,11 +207,19 @@ export function Snow({ count = 90 }: { count?: number }) {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", vis);
     };
-  }, [count]);
+  }, []);
 
-  return <canvas ref={ref} aria-hidden className="pointer-events-none fixed inset-0 z-30 h-full w-full" />;
+  return (
+    <>
+      {/* задний слой — за страницей, над фоном-бумагой */}
+      <canvas ref={backRef} aria-hidden className="pointer-events-none fixed inset-0 -z-[5] h-full w-full" />
+      {/* средний и передний — поверх страницы */}
+      <canvas ref={frontRef} aria-hidden className="pointer-events-none fixed inset-0 z-30 h-full w-full" />
+    </>
+  );
 }
 
 export default Snow;

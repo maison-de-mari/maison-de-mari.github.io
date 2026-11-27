@@ -39,7 +39,9 @@ export class GlassRing {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
-  private bottles: { b: RingBottle; g: THREE.Group; box: THREE.Box3 }[] = [];
+  // spin — свой поворот флакона (крутят в крупном плане), spinV — его инерция; spread — насколько отодвинут в сторону
+  private bottles: { b: RingBottle; g: THREE.Group; box: THREE.Box3; spin: number; spinV: number; spread: number }[] = [];
+  private spinning = false; // тянут открытый флакон, а не кольцо
   private env: THREE.Texture;
   private R: number;
   private step: number;
@@ -130,7 +132,7 @@ export class GlassRing {
         g.scale.setScalar(this.S);
         [...pb.scene.children].forEach((c) => g.add(c));
         this.scene.add(g);
-        this.bottles.push({ b: pb, g, box: new THREE.Box3() });
+        this.bottles.push({ b: pb, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0 });
         return;
       }
       let tex: THREE.Texture | undefined;
@@ -155,7 +157,7 @@ export class GlassRing {
       g.scale.setScalar(this.S);
       [...b.scene.children].forEach((c) => g.add(c));
       this.scene.add(g);
-      this.bottles.push({ b, g, box: new THREE.Box3() });
+      this.bottles.push({ b, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0 });
     });
 
     this.ro = new ResizeObserver(() => this.resize());
@@ -316,18 +318,27 @@ export class GlassRing {
 
   private onMove = (e: PointerEvent) => {
     if (this.down) {
-      if (!this.dragging && Math.abs(e.clientX - this.startX) > 7 && this.sel === null) {
+      if (!this.dragging && Math.abs(e.clientX - this.startX) > 7) {
         this.dragging = true;
-        this.target = null;
+        this.spinning = this.sel !== null;
+        if (!this.spinning) this.target = null;
         this.renderer.domElement.setPointerCapture(e.pointerId);
         this.renderer.domElement.style.cursor = "grabbing";
       }
       if (this.dragging) {
         const now = performance.now();
-        const da = ((e.clientX - this.prevX) / this.host.clientWidth) * Math.PI * (this.portrait ? 2.2 : 1.5);
-        this.ring += da;
         const dt = Math.max(8, now - this.prevT) / 1000;
-        this.vel = this.vel * 0.6 + (da / dt) * 0.4;
+        if (this.spinning && this.sel !== null) {
+          // крутим открытый флакон вокруг своей оси
+          const x = this.bottles[this.sel];
+          const da = ((e.clientX - this.prevX) / this.host.clientWidth) * Math.PI * (this.portrait ? 3 : 2.4);
+          x.spin += da;
+          x.spinV = x.spinV * 0.6 + (da / dt) * 0.4;
+        } else {
+          const da = ((e.clientX - this.prevX) / this.host.clientWidth) * Math.PI * (this.portrait ? 2.2 : 1.5);
+          this.ring += da;
+          this.vel = this.vel * 0.6 + (da / dt) * 0.4;
+        }
         this.prevX = e.clientX;
         this.prevT = now;
         this.loop();
@@ -339,7 +350,7 @@ export class GlassRing {
     const i = this.pick(e);
     const r = this.renderer.domElement.getBoundingClientRect();
     this.hover = i === null ? null : { i, px: ((e.clientX - r.left) / r.width - 0.5) * 2, py: ((e.clientY - r.top) / r.height - 0.5) * 2 };
-    this.renderer.domElement.style.cursor = i !== null ? "pointer" : "grab";
+    this.renderer.domElement.style.cursor = i !== null && i === this.sel ? "grab" : i !== null ? "pointer" : "grab";
     this.loop();
   };
 
@@ -349,6 +360,11 @@ export class GlassRing {
     if (this.dragging) {
       this.dragging = false;
       this.renderer.domElement.style.cursor = "grab";
+      if (this.spinning) {
+        this.spinning = false;
+        this.loop();
+        return;
+      }
       if (Math.abs(this.vel) < 0.35) this.target = this.snap(this.ring);
       this.loop();
       return;
@@ -375,6 +391,7 @@ export class GlassRing {
   private onCancel = () => {
     this.down = false;
     this.dragging = false;
+    this.spinning = false;
   };
 
   private onLeave = () => {
@@ -410,7 +427,7 @@ export class GlassRing {
 
     // кольцо: доводка к цели или инерция
     const prevRing = this.ring;
-    if (!this.dragging) {
+    if (!this.dragging || this.spinning) {
       if (this.target !== null) {
         const d = this.target - this.ring;
         this.ring += d * damp(this.sel !== null ? 3.4 : 6);
@@ -450,17 +467,36 @@ export class GlassRing {
 
     this.bottles.forEach((x, i) => {
       let a = i * this.step + this.ring;
-      if (this.sel !== null && this.sel !== i && f > 0) {
-        // в крупном плане соседи расходятся в стороны: ближние уходят из кадра, дальние — задний план
+      // в крупном плане соседи расходятся в стороны: ближние уходят из кадра, дальние — задний план
+      // (плавно — при листании стрелками новый выбранный выезжает на место, прежний отходит)
+      const want = this.sel !== null && this.sel !== i ? 1 : 0;
+      x.spread += (want - x.spread) * damp(5);
+      if (Math.abs(want - x.spread) > 1e-3) moving = true;
+      if (x.spread * f > 1e-4) {
         const rel = Math.atan2(Math.sin(a), Math.cos(a));
-        a += Math.sign(rel) * 0.55 * f * (1 - Math.abs(rel) / Math.PI);
+        a += Math.sign(rel) * 0.55 * f * x.spread * (1 - Math.abs(rel) / Math.PI);
+      }
+      // свой поворот: открытый флакон крутят с инерцией; остальные плавно возвращаются лицом наружу
+      const grabbed = this.spinning && this.sel === i;
+      if (!grabbed) {
+        if (this.sel === i && Math.abs(x.spinV) > 0.02) {
+          x.spin += x.spinV * dt;
+          x.spinV *= Math.exp(-dt * 2.2);
+          moving = true;
+        } else if (this.sel !== i && Math.abs(x.spin) > 1e-3) {
+          x.spinV = 0;
+          // к ближайшему «лицом наружу», не откручивая лишние обороты
+          x.spin = Math.atan2(Math.sin(x.spin), Math.cos(x.spin));
+          x.spin -= x.spin * damp(4);
+          moving = true;
+        } else if (this.sel !== i) x.spin = 0;
       }
       x.g.position.set(Math.sin(a) * this.R, 0, Math.cos(a) * this.R);
-      x.g.rotation.y = a; // лицом наружу кольца
+      x.g.rotation.y = a + x.spin; // лицом наружу кольца + свой поворот
       const s = x.b.state;
       // крен от вращения кольца (флакон «отстаёт»), плюс наклон к курсору при наведении
       const h = this.hover && this.hover.i === i && this.sel === null ? this.hover : null;
-      s.ttz = THREE.MathUtils.clamp(angVel * 0.05, -0.16, 0.16) + (h ? -h.px * 0.12 : 0);
+      s.ttz = THREE.MathUtils.clamp(angVel * 0.05 + (this.sel === i ? x.spinV * 0.025 : 0), -0.16, 0.16) + (h ? -h.px * 0.12 : 0);
       s.ttx = h ? h.py * 0.06 : 0;
       if (x.b.energy() > 0.004) {
         x.b.step(dt);
