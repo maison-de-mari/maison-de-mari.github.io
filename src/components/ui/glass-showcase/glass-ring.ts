@@ -72,6 +72,10 @@ export class GlassRing {
   private stirAt: { x: number; z: number; t: number } | null = null;
   private hitP = new THREE.Vector3();
   private offTheme: () => void;
+  /** чёткие листы снимков: грузятся только для флакона в крупном плане и того, на который смотрим изнутри */
+  private hd = new Map<number, { tex: THREE.Texture | null; used: number }>();
+  private hdSrc = new Map<number, { url: string; pb: { setPic(t: THREE.Texture): void; pic: THREE.Texture } }>();
+  private loader = new THREE.TextureLoader();
   /** раскрытие витрины прокруткой: цель (от ScrollTrigger) и плавное текущее значение, 0 … 1 */
   private unfoldT = 0;
   private unfold = 0;
@@ -178,6 +182,7 @@ export class GlassRing {
     specs.forEach((spec) => {
       if ("photo" in spec) {
         const pb = buildPhotoBottle(spec.photo, HT, tload(spec.photo.sheet, true), tload(spec.photo.glass, false));
+        this.hdSrc.set(this.bottles.length, { url: `${base}/sheets-hd/${spec.photo.slug}.webp`, pb });
         const g = new THREE.Group();
         g.scale.setScalar(this.S);
         [...pb.scene.children].forEach((c) => g.add(c));
@@ -361,6 +366,45 @@ export class GlassRing {
 
   private slotAt(ring: number) {
     return ((Math.round(-ring / this.step) % this.slots) + this.slots) % this.slots;
+  }
+
+  /** чёткий лист для флакона i (и не больше 6 таких сразу — память видеокарты на телефоне) */
+  private wantHD(i: number) {
+    const src = this.hdSrc.get(i);
+    if (!src) return;
+    const have = this.hd.get(i);
+    if (have) {
+      have.used = performance.now();
+      return;
+    }
+    const rec = { tex: null as THREE.Texture | null, used: performance.now() };
+    this.hd.set(i, rec);
+    this.loader.load(src.url, (t) => {
+      if (this.disposed || this.hd.get(i) !== rec) return t.dispose();
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 8;
+      rec.tex = t;
+      src.pb.setPic(t);
+      this.force = true;
+      this.loop();
+    });
+    if (this.hd.size > 6) {
+      // самый давно не нужный — обратно на обычный лист
+      let old = -1;
+      let t0 = Infinity;
+      this.hd.forEach((r, k) => {
+        if (k !== i && r.used < t0) {
+          t0 = r.used;
+          old = k;
+        }
+      });
+      const r = this.hd.get(old);
+      if (r) {
+        this.hdSrc.get(old)?.pb.setPic(this.hdSrc.get(old)!.pb.pic);
+        r.tex?.dispose();
+        this.hd.delete(old);
+      }
+    }
   }
 
   // ───────────────────────── указатель
@@ -606,6 +650,9 @@ export class GlassRing {
     // подпись внизу — флакон напротив зрителя; изнутри — тот, на который сейчас смотрим
     const front =
       pu > 0.25 ? ((Math.round((this.psi - this.ring) / this.step) % this.slots) + this.slots) % this.slots : this.slotAt(this.ring);
+    // чёткие снимки: открытый флакон; изнутри витрины — тот, на который смотрим, и соседи
+    if (this.sel !== null && this.focus > 0.3) this.wantHD(this.sel);
+    if (pu > 0.2 && front < this.n) [0, 1, -1].forEach((d) => this.wantHD((front + d + this.n) % this.n));
     if (front < this.n && front !== this.front) {
       this.front = front;
       this.ev.onFront(front);
@@ -747,6 +794,7 @@ export class GlassRing {
     cv.removeEventListener("pointerleave", this.onLeave);
     this.bottles.forEach((x) => x.b.dispose());
     this.living.dispose();
+    this.hd.forEach((r) => r.tex?.dispose());
     this.offTheme();
     this.extra.forEach((x) => x.dispose());
     this.env.dispose();

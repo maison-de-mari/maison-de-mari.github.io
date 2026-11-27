@@ -217,6 +217,11 @@ export function buildPhotoBottle(d: PhotoBottleData, HT: number, pic: THREE.Text
   step(0.016);
   return {
     scene,
+    /** подменить лист снимков на чёткий (тот же расклад, большее разрешение) или вернуть исходный */
+    setPic(t: THREE.Texture) {
+      mat.uniforms.pic.value = t;
+    },
+    pic,
     state: st,
     size: { a: maxW, b: maxD },
     width: maxW * 2,
