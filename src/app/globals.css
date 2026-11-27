@@ -19,9 +19,12 @@
   --color-muted-foreground: var(--color-soft);
 }
 
+/* фон — только у html: у body прозрачный, иначе он закрывает фон-сетку (она под страницей, z-index −10) */
+html {
+  background: var(--color-night);
+}
 html,
 body {
-  background: var(--color-night);
   color: var(--color-ink);
 }
 
