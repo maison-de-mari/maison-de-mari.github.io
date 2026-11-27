@@ -5,17 +5,29 @@ import * as THREE from "three";
  * Флаконы стоят в воде и отражаются в ней (отражение — сами флаконы, отзеркаленные под воду,
  * в отдельный кадр в полразмера; вода искажает его своими волнами).
  * Вода живая: медленная зыбь, блики, световая сетка на дне, золотой отсвет бежит по краю;
- * от мыши, вращения кольца и выбора флакона расходятся круги; по воде плывут лепестки
- * и уносятся течением, когда кольцо крутят.
+ * от мыши, вращения кольца и выбора флакона расходятся круги; по воде плывут лепестки.
+ *
+ * Форма раскрывается (setShape): круг размыкается с дальней стороны и вытягивается в длинную С-образную дугу.
+ * Все части подиума — сечения, протянутые вдоль кривой (sweep), поэтому гнутся вместе с ней:
+ * точка с «долей пути» s и отступом от ряда флаконов d всегда остаётся своей точкой подиума.
+ * Флаконы и лепестки ставятся по тем же правилам (place) — порядок и привязка сохраняются.
  */
 
 const MAX_RIPPLES = 20;
+const TAU = Math.PI * 2;
+const wrap01 = (x: number) => x - Math.floor(x);
 
 const waterVert = /* glsl */ `
+attribute float aD;
+attribute float aS;
 varying vec3 vW;
+varying float vD;
+varying float vS;
 void main(){
   vec4 w = modelMatrix * vec4(position, 1.0);
   vW = w.xyz;
+  vD = aD;
+  vS = aS;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 
@@ -24,11 +36,13 @@ uniform sampler2D refl;
 uniform vec2 res;
 uniform float time;
 uniform vec4 rip[${MAX_RIPPLES}];
-uniform vec3 radii;   // внутренний край, ряд флаконов, внешний край
+uniform vec2 edges;   // внутренний и внешний край воды — отступ от ряда флаконов
 uniform vec3 body;
 uniform vec3 deep;
 uniform vec3 gold;
 varying vec3 vW;
+varying float vD;
+varying float vS;
 float swell(vec2 p){
   return 0.010 * sin(dot(p, vec2(0.83, 0.55)) * 2.3 + time * 0.9)
        + 0.006 * sin(dot(p, vec2(-0.45, 0.89)) * 4.1 - time * 1.3)
@@ -61,8 +75,7 @@ void main(){
   vec3 n = normalize(vec3(-(H(p + vec2(e, 0.0)) - h0) / e, 1.0, -(H(p + vec2(0.0, e)) - h0) / e));
   vec3 V = normalize(cameraPosition - vW);
   float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
-  float r = length(p);
-  float across = clamp((r - radii.x) / (radii.z - radii.x), 0.0, 1.0);
+  float across = clamp((vD - edges.x) / (edges.y - edges.x), 0.0, 1.0);
   // глубже к середине канала — чуть темнее и теплее
   vec3 c = mix(body, deep, sin(across * 3.14159) * 0.75);
   c += vec3(1.0, 0.97, 0.9) * 0.1 * caustic(p + n.xz * 0.8);
@@ -78,15 +91,18 @@ void main(){
   float s = max(dot(reflect(-V, n), L), 0.0);
   c += vec3(1.0, 0.98, 0.94) * (pow(s, 260.0) * 1.2 + pow(s, 26.0) * 0.07);
   // два золотых отсвета бегут вдоль краёв навстречу друг другу
-  float ang = atan(p.x, p.y);
+  float ang = vS * 6.2831853;
   float a1 = wrapA(ang - time * 0.21), a2 = wrapA(ang + time * 0.13 + 2.0);
-  float edge = exp(-(radii.z - r) * 5.0) + exp(-(r - radii.x) * 5.0);
+  float edge = exp(-(edges.y - vD) * 5.0) + exp(-(vD - edges.x) * 5.0);
   c += gold * (exp(-a1 * a1 * 5.0) + 0.6 * exp(-a2 * a2 * 8.0)) * edge * 0.5;
   gl_FragColor = vec4(c, 1.0);
   #include <colorspace_fragment>
 }`;
 
 type Petal = { a: number; r: number; va: number; vr: number; yaw: number; spin: number; ph: number; s: number; tilt: number; lo: number; hi: number; drift: number };
+
+/** точка сечения: отступ от ряда флаконов d, высота y, нормаль в плоскости сечения (nd, ny) */
+type ProfPt = { d: number; y: number; nd: number; ny: number };
 
 function petalTexture() {
   const c = document.createElement("canvas");
@@ -120,11 +136,140 @@ function petalTexture() {
   return t;
 }
 
+/** нормали ломаной сечения: перпендикуляр к направлению обхода, сглаженный между соседями */
+function polyline(pts: [number, number][], closed = false): ProfPt[] {
+  const n = pts.length;
+  return pts.map(([d, y], i) => {
+    const p = pts[closed ? (i - 1 + n) % n : Math.max(0, i - 1)];
+    const q = pts[closed ? (i + 1) % n : Math.min(n - 1, i + 1)];
+    const td = q[0] - p[0];
+    const ty = q[1] - p[1];
+    const l = Math.hypot(td, ty) || 1;
+    return { d, y, nd: -ty / l, ny: td / l };
+  });
+}
+
+/** сечение, протянутое вдоль кривой: столбцы по доле пути s ∈ [0, 1], строки — точки сечения */
+class Sweep {
+  readonly geo = new THREE.BufferGeometry();
+  private pos: Float32Array;
+  private nrm: Float32Array;
+  constructor(
+    readonly prof: ProfPt[],
+    readonly segs: number,
+    closed: boolean,
+    extra?: (j: number, k: number) => [number, number],
+  ) {
+    const P = prof.length;
+    const cols = segs + 1;
+    this.pos = new Float32Array(cols * P * 3);
+    this.nrm = new Float32Array(cols * P * 3);
+    const uv = new Float32Array(cols * P * 2);
+    const aD = new Float32Array(cols * P);
+    const aS = new Float32Array(cols * P);
+    for (let j = 0; j < cols; j++)
+      for (let k = 0; k < P; k++) {
+        const v = j * P + k;
+        const [u0, v0] = extra ? extra(j, k) : [j / segs, k / Math.max(1, P - 1)];
+        uv[v * 2] = u0;
+        uv[v * 2 + 1] = v0;
+        aD[v] = prof[k].d;
+        aS[v] = j / segs;
+      }
+    const idx: number[] = [];
+    const rows = closed ? P : P - 1;
+    for (let j = 0; j < segs; j++)
+      for (let k = 0; k < rows; k++) {
+        const k1 = (k + 1) % P;
+        const a = j * P + k;
+        const b = (j + 1) * P + k;
+        const c = (j + 1) * P + k1;
+        const d = j * P + k1;
+        idx.push(a, b, d, b, c, d);
+      }
+    this.geo.setIndex(idx);
+    this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
+    this.geo.setAttribute("normal", new THREE.BufferAttribute(this.nrm, 3));
+    this.geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    this.geo.setAttribute("aD", new THREE.BufferAttribute(aD, 1));
+    this.geo.setAttribute("aS", new THREE.BufferAttribute(aS, 1));
+  }
+  /** уложить вдоль текущей кривой */
+  bend(ring: LivingRing) {
+    const P = this.prof.length;
+    for (let j = 0; j <= this.segs; j++) {
+      const th = ring.thetaOfS(j / this.segs);
+      const sn = Math.sin(th);
+      const cs = Math.cos(th);
+      for (let k = 0; k < P; k++) {
+        const p = this.prof[k];
+        const v = (j * P + k) * 3;
+        const r = ring.rho + p.d;
+        this.pos[v] = sn * r;
+        this.pos[v + 1] = p.y;
+        this.pos[v + 2] = ring.zc + cs * r;
+        this.nrm[v] = p.nd * sn;
+        this.nrm[v + 1] = p.ny;
+        this.nrm[v + 2] = p.nd * cs;
+      }
+    }
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.normal.needsUpdate = true;
+  }
+}
+
+/** торец разомкнутого подиума: сечение обода, повёрнутое поперёк дуги */
+class Cap {
+  readonly geo = new THREE.BufferGeometry();
+  private pos: Float32Array;
+  private nrm: Float32Array;
+  constructor(
+    readonly prof: [number, number][],
+    readonly end: 0 | 1,
+  ) {
+    const tri = THREE.ShapeUtils.triangulateShape(
+      prof.map(([d, y]) => new THREE.Vector2(d, y)),
+      [],
+    );
+    this.pos = new Float32Array(prof.length * 3);
+    this.nrm = new Float32Array(prof.length * 3);
+    this.geo.setIndex(tri.flat());
+    this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
+    this.geo.setAttribute("normal", new THREE.BufferAttribute(this.nrm, 3));
+  }
+  bend(ring: LivingRing) {
+    const th = ring.thetaOfS(this.end);
+    const sn = Math.sin(th);
+    const cs = Math.cos(th);
+    // торец смотрит вдоль дуги наружу: у начала — назад, у конца — вперёд по ходу
+    const sgn = this.end ? 1 : -1;
+    this.prof.forEach(([d, y], k) => {
+      const r = ring.rho + d;
+      this.pos[k * 3] = sn * r;
+      this.pos[k * 3 + 1] = y;
+      this.pos[k * 3 + 2] = ring.zc + cs * r;
+      this.nrm[k * 3] = cs * sgn;
+      this.nrm[k * 3 + 1] = 0;
+      this.nrm[k * 3 + 2] = -sn * sgn;
+    });
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.normal.needsUpdate = true;
+  }
+}
+
 export class LivingRing {
   readonly group = new THREE.Group();
   readonly ri: number;
   readonly ro: number;
   time = 0;
+  /** форма: u — раскрытие (0 круг … 1 дуга), sigma — угол разреза (между двумя дальними флаконами) */
+  u = 0;
+  sigma = Math.PI;
+  /** параметры дуги: охват phi, радиус rho, центр по z */
+  phi = TAU;
+  rho: number;
+  zc = 0;
+  private sf = 0.5;
   private R: number;
   private reflScene = new THREE.Scene();
   private rt: THREE.WebGLRenderTarget;
@@ -139,19 +284,34 @@ export class LivingRing {
   private stir: { x: number; z: number; vx: number; vz: number; t: number } | null = null;
   private dummy = new THREE.Object3D();
   private keep: { dispose(): void }[] = [];
+  private sweeps: (Sweep | Cap)[] = [];
+  private v = new THREE.Vector3();
 
   constructor(opts: { R: number; half: number; dh: number; touch: boolean; env: THREE.Texture }) {
     const { R, half, dh, touch } = opts;
     this.R = R;
+    this.rho = R;
     this.ri = R - half;
     this.ro = R + half;
     const k = <T extends { dispose(): void }>(x: T) => (this.keep.push(x), x);
+    const add = (s: Sweep | Cap, m: THREE.Material, order = 0) => {
+      this.sweeps.push(s);
+      k(s.geo);
+      const mesh = new THREE.Mesh(s.geo, m);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = order;
+      this.group.add(mesh);
+      return mesh;
+    };
     this.reflScene.environment = opts.env;
 
     this.rt = k(new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: true }));
     this.rip = Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector4(0, 0, -99, 0));
 
-    // вода
+    const SEG = 288;
+    // вода — полоса между закраинами
+    const wi = this.ri - 0.01 - R;
+    const wo = this.ro + 0.01 - R;
     this.mat = k(
       new THREE.ShaderMaterial({
         uniforms: {
@@ -159,86 +319,101 @@ export class LivingRing {
           res: { value: new THREE.Vector2(1, 1) },
           time: { value: 0 },
           rip: { value: this.rip },
-          radii: { value: new THREE.Vector3(this.ri, R, this.ro) },
+          edges: { value: new THREE.Vector2(this.ri - R, this.ro - R) },
           body: { value: new THREE.Color("#f1ece5") },
           deep: { value: new THREE.Color("#ddd3cc") },
           gold: { value: new THREE.Color("#e0b56a") },
         },
         vertexShader: waterVert,
         fragmentShader: waterFrag,
+        side: THREE.DoubleSide,
       }),
     );
-    const water = new THREE.Mesh(k(new THREE.RingGeometry(this.ri - 0.01, this.ro + 0.01, 288, 6)), this.mat);
-    water.rotation.x = -Math.PI / 2;
-    this.group.add(water);
+    add(
+      new Sweep(
+        Array.from({ length: 7 }, (_, i) => ({ d: wi + ((wo - wi) * i) / 6, y: 0, nd: 0, ny: 1 })),
+        SEG,
+        false,
+      ),
+      this.mat,
+    );
 
-    // гипсовый обод: внутренняя и внешняя закраина чуть выше воды, мягкие скосы
+    // гипсовый обод: внутренняя и внешняя закраина чуть выше воды, мягкие скосы; сечение замкнуто снизу
     const L = 0.24;
     const top = 0.07;
     const bot = -0.44;
     const a = this.ri - L;
     const b = this.ro + L;
-    const prof = [
-      [a + 0.02, bot],
-      [a, bot + 0.03],
-      [a, top - 0.04],
-      [a + 0.015, top - 0.01],
-      [a + 0.05, top],
-      [this.ri - 0.05, top],
-      [this.ri - 0.01, top - 0.02],
-      [this.ri, -0.03],
-      [this.ro, -0.03],
-      [this.ro + 0.01, top - 0.02],
-      [this.ro + 0.05, top],
-      [b - 0.05, top],
-      [b - 0.015, top - 0.01],
-      [b, top - 0.04],
-      [b, bot + 0.03],
-      [b - 0.02, bot],
-    ].map(([x, y]) => new THREE.Vector2(x, y));
-    // двусторонний материал — освещение верное, в какую сторону ни смотрят грани тела вращения
+    const rim: [number, number][] = (
+      [
+        [a + 0.02, bot],
+        [a, bot + 0.03],
+        [a, top - 0.04],
+        [a + 0.015, top - 0.01],
+        [a + 0.05, top],
+        [this.ri - 0.05, top],
+        [this.ri - 0.01, top - 0.02],
+        [this.ri, -0.03],
+        [this.ro, -0.03],
+        [this.ro + 0.01, top - 0.02],
+        [this.ro + 0.05, top],
+        [b - 0.05, top],
+        [b - 0.015, top - 0.01],
+        [b, top - 0.04],
+        [b, bot + 0.03],
+        [b - 0.02, bot],
+      ] as [number, number][]
+    ).map(([x, y]) => [x - R, y]);
     const plaster = k(new THREE.MeshStandardMaterial({ color: "#f6f2ec", roughness: 0.62, envMapIntensity: 1.25, side: THREE.DoubleSide }));
-    const rim = new THREE.Mesh(k(new THREE.LatheGeometry(prof, 256)), plaster);
-    this.group.add(rim);
+    add(new Sweep(polyline(rim, true), SEG, true), plaster);
+    // торцы появляются, когда круг разомкнут
+    add(new Cap([...rim].reverse(), 0), plaster);
+    add(new Cap([...rim].reverse(), 1), plaster);
 
     // золотые нити по закраинам и пояс на боку
     const goldM = k(new THREE.MeshStandardMaterial({ color: "#c9a463", metalness: 1, roughness: 0.28 }));
     // на телефоне без сглаживания тонкая нить рвётся на пунктир — там она толще
     const thick = touch ? 1.8 : 1.2;
-    const torus = (r: number, y: number, t: number) => {
-      const m = new THREE.Mesh(k(new THREE.TorusGeometry(r, t * thick, 10, 320)), goldM);
-      m.rotation.x = Math.PI / 2;
-      m.position.y = y;
-      this.group.add(m);
+    const tube = (r: number, y: number, t: number) => {
+      const pts: ProfPt[] = Array.from({ length: 10 }, (_, i) => {
+        const f = (i / 10) * TAU;
+        return { d: r - R + Math.cos(f) * t * thick, y: y + Math.sin(f) * t * thick, nd: Math.cos(f), ny: Math.sin(f) };
+      });
+      add(new Sweep(pts, 320, true), goldM);
     };
-    torus(this.ri - 0.035, top - 0.005, 0.014);
-    torus(this.ro + 0.035, top - 0.005, 0.014);
-    torus(b + 0.004, -0.15, 0.011);
+    tube(this.ri - 0.035, top - 0.005, 0.014);
+    tube(this.ro + 0.035, top - 0.005, 0.014);
+    tube(b + 0.004, -0.15, 0.011);
 
-    // мягкая тень кольца на «бумаге»
+    // мягкая тень подиума на «бумаге» — полоса вдоль кривой, прозрачность — по поперечному градиенту
+    const s0 = a - 1.1 - R;
+    const s1 = b + 1.4 - R;
     const sc = document.createElement("canvas");
-    sc.width = sc.height = 512;
+    sc.width = 256;
+    sc.height = 1;
     const sx = sc.getContext("2d")!;
-    const Rmax = b + 1.4;
-    const gr = sx.createRadialGradient(256, 256, 0, 256, 256, 256);
-    const at = (r: number) => Math.min(1, Math.max(0, r / Rmax));
+    const at = (d: number) => Math.min(1, Math.max(0, (d - s0) / (s1 - s0)));
+    const gr = sx.createLinearGradient(0, 0, 256, 0);
     gr.addColorStop(0, "rgba(70,55,45,0)");
-    gr.addColorStop(at(a - 0.9), "rgba(70,55,45,0)");
-    gr.addColorStop(at(R), "rgba(70,55,45,0.26)");
-    gr.addColorStop(at(b + 0.25), "rgba(70,55,45,0.12)");
+    gr.addColorStop(at(a - 0.6 - R), "rgba(70,55,45,0.06)");
+    gr.addColorStop(at(0), "rgba(70,55,45,0.26)");
+    gr.addColorStop(at(b + 0.25 - R), "rgba(70,55,45,0.12)");
     gr.addColorStop(1, "rgba(70,55,45,0)");
     sx.fillStyle = gr;
-    sx.fillRect(0, 0, 512, 512);
+    sx.fillRect(0, 0, 256, 1);
     const st = k(new THREE.CanvasTexture(sc));
     st.colorSpace = THREE.SRGBColorSpace;
-    const floor = new THREE.Mesh(
-      k(new THREE.PlaneGeometry(Rmax * 2, Rmax * 2)),
-      k(new THREE.MeshBasicMaterial({ map: st, transparent: true, depthWrite: false, toneMapped: false })),
+    const SH = 9;
+    add(
+      new Sweep(
+        Array.from({ length: SH }, (_, i) => ({ d: s0 + ((s1 - s0) * i) / (SH - 1), y: bot - 0.005, nd: 0, ny: 1 })),
+        SEG,
+        false,
+        (j, kk) => [kk / (SH - 1), 0.5],
+      ),
+      k(new THREE.MeshBasicMaterial({ map: st, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide })),
+      -1,
     );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = bot - 0.005;
-    floor.renderOrder = -1;
-    this.group.add(floor);
 
     // лепестки на воде — по обе стороны от ряда флаконов
     const pg = k(new THREE.PlaneGeometry(1, 1, 4, 4));
@@ -261,11 +436,11 @@ export class LivingRing {
     for (let i = 0; i < count; i++) {
       const band = !okIn || Math.random() < 0.62 ? outer : inner;
       this.P.push({
-        a: Math.random() * Math.PI * 2,
+        a: Math.random() * TAU,
         r: band[0] + Math.random() * (band[1] - band[0]),
         va: 0,
         vr: 0,
-        yaw: Math.random() * Math.PI * 2,
+        yaw: Math.random() * TAU,
         spin: (Math.random() - 0.5) * 0.25,
         ph: Math.random() * 6.28,
         s: 0.36 + Math.random() * 0.2,
@@ -278,8 +453,54 @@ export class LivingRing {
     }
     this.petals.frustumCulled = false;
     this.group.add(this.petals);
+
+    this.bendAll();
     this.updatePetals(0, 0);
   }
+
+  // ───────────────────────── форма
+
+  /**
+   * Раскрытие: u = 0 — круг; u = 1 — дуга, охватывающая ~0.38 круга, длиннее исходного кольца на треть.
+   * Перёд кольца (точка напротив зрителя) остаётся на месте, разрез — под углом sigma (сзади).
+   */
+  setShape(u: number, sigma: number) {
+    if (u === this.u && (u === 0 || sigma === this.sigma)) return;
+    this.u = u;
+    this.sigma = sigma;
+    this.phi = TAU * (1 - 0.62 * u);
+    this.rho = (TAU * this.R * (1 + 0.32 * u)) / this.phi;
+    this.zc = this.R - this.rho;
+    this.sf = wrap01(-sigma / TAU);
+    this.bendAll();
+  }
+
+  private bendAll() {
+    this.sweeps.forEach((s) => s.bend(this));
+  }
+
+  /** доля пути от разреза → угол на дуге (0 — перёд) */
+  thetaOfS(s: number) {
+    return (s - this.sf) * this.phi;
+  }
+
+  /** угол на исходном круге → угол на дуге */
+  theta(a: number) {
+    return this.thetaOfS(wrap01((a - this.sigma) / TAU));
+  }
+
+  /** точка подиума: угол на дуге th, отступ от ряда флаконов d, высота y */
+  at(th: number, d: number, y: number, out: THREE.Vector3) {
+    const r = this.rho + d;
+    return out.set(Math.sin(th) * r, y, this.zc + Math.cos(th) * r);
+  }
+
+  /** точка по углу на исходном круге */
+  place(a: number, d: number, y: number, out: THREE.Vector3) {
+    return this.at(this.theta(a), d, y, out);
+  }
+
+  // ───────────────────────── отражение, круги, лепестки
 
   /** отражение: все непрозрачные части флакона, отзеркаленные под воду */
   mirror(root: THREE.Object3D) {
@@ -313,6 +534,14 @@ export class LivingRing {
     const t = -ray.origin.y / ray.direction.y;
     if (t <= 0) return null;
     out.copy(ray.direction).multiplyScalar(t).add(ray.origin);
+    if (this.u > 0) {
+      // на дуге: отступ от её окружности и попадание в охват
+      const dx = out.x;
+      const dz = out.z - this.zc;
+      const d = Math.hypot(dx, dz) - this.rho;
+      const th = Math.atan2(dx, dz);
+      return d > this.ri - this.R && d < this.ro - this.R && th > this.thetaOfS(0) && th < this.thetaOfS(1) ? out : null;
+    }
     const r = Math.hypot(out.x, out.z);
     return r > this.ri && r < this.ro ? out : null;
   }
@@ -331,20 +560,21 @@ export class LivingRing {
 
   private updatePetals(dt: number, flow: number) {
     const s = this.stir && this.time - this.stir.t < 0.25 ? this.stir : null;
+    const v = this.v;
     this.P.forEach((p, i) => {
       if (s) {
-        const x = Math.sin(p.a) * p.r;
-        const z = Math.cos(p.a) * p.r;
-        const dx = x - s.x;
-        const dz = z - s.z;
+        this.place(p.a, p.r - this.R, 0, v);
+        const dx = v.x - s.x;
+        const dz = v.z - s.z;
         const d = Math.hypot(dx, dz);
         if (d < 0.9) {
           const f = (1 - d / 0.9) * dt * 5;
-          // толчок в сторону движения мыши и прочь от неё: радиально и вдоль кольца
+          // толчок в сторону движения мыши и прочь от неё: поперёк и вдоль подиума
           const px = (s.vx * 0.12 + (dx / (d + 0.05)) * 0.6) * f;
           const pz = (s.vz * 0.12 + (dz / (d + 0.05)) * 0.6) * f;
-          const rx = Math.sin(p.a);
-          const rz = Math.cos(p.a);
+          const th = this.theta(p.a);
+          const rx = Math.sin(th);
+          const rz = Math.cos(th);
           p.vr += px * rx + pz * rz;
           p.va += (px * rz - pz * rx) / p.r;
           p.spin += (Math.random() - 0.5) * f * 2;
@@ -353,7 +583,9 @@ export class LivingRing {
       p.va *= Math.exp(-dt * 1.2);
       p.vr *= Math.exp(-dt * 1.6);
       p.spin *= Math.exp(-dt * 0.15);
-      p.a += (flow * 0.9 + p.va + p.drift) * dt;
+      // на разомкнутой дуге лепестки не дрейфуют — не перескакивают с конца на конец
+      const still = 1 - Math.min(1, this.u * 20);
+      p.a += (flow * 0.9 + p.va + p.drift) * dt * still;
       p.r += p.vr * dt;
       if (p.r < p.lo) {
         p.r = p.lo;
@@ -364,7 +596,7 @@ export class LivingRing {
       }
       p.yaw += (p.spin + flow * 0.3) * dt;
       const o = this.dummy;
-      o.position.set(Math.sin(p.a) * p.r, 0.012 + Math.sin(this.time * 1.3 + p.ph) * 0.006, Math.cos(p.a) * p.r);
+      this.place(p.a, p.r - this.R, 0.012 + Math.sin(this.time * 1.3 + p.ph) * 0.006, o.position);
       o.rotation.set(p.tilt + Math.sin(this.time * 0.9 + p.ph) * 0.06, p.yaw, Math.cos(this.time * 0.8 + p.ph) * 0.06, "YXZ");
       o.scale.set(p.s * 0.78, p.s, p.s);
       o.updateMatrix();

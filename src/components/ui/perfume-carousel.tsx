@@ -2,6 +2,8 @@
 
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
@@ -76,6 +78,9 @@ export function PerfumeCarousel({
   children?: React.ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLElement>(null);
+  const topText = useRef<HTMLDivElement>(null);
+  const bottomText = useRef<HTMLDivElement>(null);
   const ring = useRef<PerfumeRing | GlassRing | null>(null);
   const frontBtn = useRef<HTMLButtonElement>(null);
   const [front, setFront] = useState(0);
@@ -183,11 +188,39 @@ export function PerfumeCarousel({
     e.preventDefault();
   };
 
+  // прокрутка: сцена закреплена (pin), овал раскрывается в дугу, камера идёт вдоль — всё от одного прогресса (scrub)
+  useEffect(() => {
+    const el = stage.current;
+    if (!el || !glass || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.registerPlugin(ScrollTrigger);
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: el,
+          start: "top top",
+          end: () => `+=${Math.round(window.innerHeight * 2.6)}`,
+          pin: true,
+          scrub: true,
+          invalidateOnRefresh: true,
+          onUpdate: (self) => {
+            const r = ring.current;
+            if (r && "setUnfold" in r) r.setUnfold(self.progress);
+          },
+        },
+      });
+      tl.to(topText.current, { autoAlpha: 0, y: -50, ease: "none", duration: 0.16 }, 0)
+        .to(bottomText.current, { autoAlpha: 0, y: 40, ease: "none", duration: 0.12 }, 0)
+        .to({}, { duration: 1 }, 0);
+    }, el);
+    return () => ctx.revert();
+  }, [glass]);
+
   const f = items[front];
   const open = sel !== null;
 
   return (
     <section
+      ref={stage}
       aria-label="Витрина ароматов"
       onKeyDown={onKey}
       className="relative isolate h-[max(640px,100svh)] w-full overflow-hidden text-ink select-none"
@@ -197,7 +230,8 @@ export function PerfumeCarousel({
 
       {/* шапка — общая, закреплённая: SiteNav */}
 
-      {/* заголовок витрины */}
+      {/* заголовок витрины (при раскрытии прокруткой уходит вверх) */}
+      <div ref={topText} className="pointer-events-none absolute inset-0 z-10">
       <motion.div
         animate={{ opacity: open ? 0 : 1, y: open ? -10 : 0 }}
         transition={{ duration: 0.4, ease: EASE }}
@@ -215,11 +249,14 @@ export function PerfumeCarousel({
         />
       </motion.div>
 
-      {/* аромат напротив зрителя */}
+      </div>
+
+      {/* аромат напротив зрителя (при раскрытии прокруткой уходит вниз) */}
+      <div ref={bottomText} className="pointer-events-none absolute inset-0 z-10">
       <motion.div
         animate={{ opacity: open ? 0 : 1, y: open ? 12 : 0 }}
         transition={{ duration: 0.4, ease: EASE }}
-        className={`absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-4 pb-5 sm:pb-8 ${open ? "pointer-events-none" : ""}`}
+        className={`absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-4 pb-5 sm:pb-8 ${open ? "pointer-events-none" : "pointer-events-auto"}`}
         aria-hidden={open}
       >
         <div className="flex w-full max-w-xl items-center justify-between gap-3">
@@ -261,6 +298,8 @@ export function PerfumeCarousel({
       </motion.div>
 
       {/* карточка аромата */}
+      </div>
+
       <AnimatePresence>
         {sel !== null && <Card key="card" aroma={items[sel]} index={sel} onClose={close} reduce={!!reduce} />}
         {sel !== null && (
