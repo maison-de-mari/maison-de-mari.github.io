@@ -211,6 +211,14 @@ export function PerfumeCarousel({
       >
         <RevealText as="p" text="Парфюмерный бутик · Ташкент" className="text-[11px] font-medium uppercase tracking-[0.32em] text-soft" stagger={0.08} />
         <RevealText as="h1" text="Витрина ароматов" className="mt-3 font-serif text-[clamp(2.2rem,5.4vw,4.2rem)] font-light leading-none" delay={0.35} stagger={0.22} />
+        {/* эпиграф */}
+        <RevealText
+          as="p"
+          text="Любовь нельзя увидеть — её можно только почувствовать. Как аромат."
+          className="mx-auto mt-4 max-w-[46rem] text-balance font-serif text-[clamp(1.05rem,1.7vw,1.35rem)] font-light italic leading-snug text-soft"
+          delay={1.1}
+          stagger={0.09}
+        />
       </motion.div>
 
       {/* аромат напротив зрителя */}

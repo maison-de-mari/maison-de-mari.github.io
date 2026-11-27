@@ -253,9 +253,9 @@ export class GlassRing {
           this.camera.updateMatrixWorld();
           yf = fp.set(0, 0, this.R + 0.5).project(this.camera).y; // низ переднего флакона
           yb = bp.set(0, bh * 1.05, -this.R).project(this.camera).y; // верх заднего
-          ly += ((yf + yb) / 2 - 0.02) * dist * t; // середина кольца — посередине свободного места
+          ly += ((yf + yb) / 2 + 0.04) * dist * t; // середина кольца — посередине свободного места
         }
-        if (yb - yf <= 1.0) break; // от подписи внизу (−0.5) до заголовка вверху (+0.52)
+        if (yb - yf <= 0.92) break; // от подписи внизу (−0.5) до эпиграфа под заголовком (+0.42)
         dist *= 1.03;
       }
       this.base.pos.set(0, dist * EL, dist);
