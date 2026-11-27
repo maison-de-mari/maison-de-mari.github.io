@@ -236,10 +236,30 @@ export class GlassRing {
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
     const span = this.R + HT * 0.45;
     if (this.portrait && this.n > 3) {
-      // телефон: кольцо шире экрана — видна передняя дуга с крупными флаконами, камера выше
-      const dist = Math.max((this.R * 0.95) / (t * aspect), (HT * 1.2) / t);
-      this.base.pos.set(0, dist * 0.42, dist);
-      this.base.look.set(0, HT * 0.35, 0);
+      // телефон: камера ближе и выше — кольцо заполняет место между заголовком и подписью
+      // (передние флаконы крупные, кольцо шире экрана — бока уходят за край, их докручивают пальцем)
+      const bh = HT * this.S;
+      const fp = new THREE.Vector3();
+      const bp = new THREE.Vector3();
+      let dist = (HT * 1.2) / t;
+      let ly = bh * 0.35;
+      const EL = 0.52; // высота камеры к расстоянию (≈27°)
+      for (let k = 0; k < 90; k++) {
+        let yf = 0;
+        let yb = 0;
+        for (let j = 0; j < 4; j++) {
+          this.camera.position.set(0, dist * EL, dist);
+          this.camera.lookAt(0, ly, 0);
+          this.camera.updateMatrixWorld();
+          yf = fp.set(0, 0, this.R + 0.5).project(this.camera).y; // низ переднего флакона
+          yb = bp.set(0, bh * 1.05, -this.R).project(this.camera).y; // верх заднего
+          ly += ((yf + yb) / 2 - 0.02) * dist * t; // середина кольца — посередине свободного места
+        }
+        if (yb - yf <= 1.0) break; // от подписи внизу (−0.5) до заголовка вверху (+0.52)
+        dist *= 1.03;
+      }
+      this.base.pos.set(0, dist * EL, dist);
+      this.base.look.set(0, ly, 0);
     } else {
       let dist = Math.max(span / (t * aspect) + this.R * 0.5, (HT * 1.35) / t);
       // широкий экран: отодвигаем камеру, пока передний флакон не окажется выше подписи внизу
