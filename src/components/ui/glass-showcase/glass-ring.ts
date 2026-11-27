@@ -85,7 +85,8 @@ export class GlassRing {
     this.S = this.n > 3 ? 0.68 : 1;
     this.step = (Math.PI * 2) / this.slots;
     const touch = window.matchMedia("(pointer: coarse)").matches;
-    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !touch, powerPreference: "high-performance" }));
+    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !touch, alpha: true, powerPreference: "high-performance" }));
+    r.setClearColor(0x000000, 0); // прозрачный — за витриной виден фон страницы (сетка)
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.5 : 1.75));
     r.toneMapping = THREE.NeutralToneMapping;
     r.toneMappingExposure = 1.05;
@@ -96,7 +97,6 @@ export class GlassRing {
     host.appendChild(cv);
 
     this.env = softboxEnv(r);
-    this.scene.background = BG;
     this.scene.environment = this.env;
 
     // флаконы по кругу: радиус — чтобы соседние не касались

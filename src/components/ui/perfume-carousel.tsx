@@ -8,6 +8,7 @@ import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
 import { GlassRing, type RingSpec } from "./glass-showcase/glass-ring";
+import { ScrollingGridShader } from "./grid-shader";
 import { quality, useQuality } from "@/lib/quality";
 import type { SolidSpec } from "./perfume-ring/solid-bottle";
 
@@ -171,7 +172,7 @@ export function PerfumeCarousel({
       onKeyDown={onKey}
       className="relative isolate h-[max(640px,100svh)] w-full overflow-hidden bg-night text-ink select-none"
     >
-      <div aria-hidden className="absolute inset-0 -z-20 bg-[radial-gradient(120%_80%_at_50%_38%,#ffffff_0%,#f7f3ed_55%,#ebe3d6_100%)]" />
+      <ScrollingGridShader className="absolute! inset-0 -z-20" />
       {tier === "rich" && <Scent tone="light" />}
       <div ref={host} className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`} />
       {/* затемнение снизу — подпись читается поверх края подиума; в крупном плане убираем, чтобы не закрывать флакон */}
