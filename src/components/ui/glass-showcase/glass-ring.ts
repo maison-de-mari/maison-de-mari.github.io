@@ -46,6 +46,8 @@ export class GlassRing {
   private n: number;
   /** мест на кольце: не меньше трёх — при двух флаконах второй иначе стоит точно за первым */
   private slots: number;
+  /** масштаб флаконов на кольце: при многих флаконах — меньше, чтобы им было просторно */
+  private S: number;
   private extra: { dispose(): void }[] = [];
 
   private ring = 0;
@@ -80,6 +82,7 @@ export class GlassRing {
   constructor(private host: HTMLElement, specs: RingSpec[], private ev: GlassRingEvents, base = "") {
     this.n = specs.length;
     this.slots = Math.max(3, this.n);
+    this.S = this.n > 3 ? 0.68 : 1;
     this.step = (Math.PI * 2) / this.slots;
     const touch = window.matchMedia("(pointer: coarse)").matches;
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !touch, powerPreference: "high-performance" }));
@@ -124,6 +127,7 @@ export class GlassRing {
       if ("photo" in spec) {
         const pb = buildPhotoBottle(spec.photo, HT, tload(spec.photo.sheet, true), tload(spec.photo.glass, false));
         const g = new THREE.Group();
+        g.scale.setScalar(this.S);
         [...pb.scene.children].forEach((c) => g.add(c));
         this.scene.add(g);
         this.bottles.push({ b: pb, g, box: new THREE.Box3() });
@@ -148,6 +152,7 @@ export class GlassRing {
       b.step(0.016);
       // всё содержимое сцены флакона (флакон, тень, каустика) — в одну группу на кольце
       const g = new THREE.Group();
+      g.scale.setScalar(this.S);
       [...b.scene.children].forEach((c) => g.add(c));
       this.scene.add(g);
       this.bottles.push({ b, g, box: new THREE.Box3() });
@@ -221,14 +226,22 @@ export class GlassRing {
     this.portrait = aspect < 0.85;
     const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
     const span = this.R + HT * 0.45;
-    const dist = Math.max(span / (t * aspect) + this.R * 0.5, (HT * 1.35) / t);
-    this.base.pos.set(0, HT * 0.5 + dist * 0.22, dist);
-    this.base.look.set(0, HT * 0.3, 0);
+    if (this.portrait && this.n > 3) {
+      // телефон: кольцо шире экрана — видна передняя дуга с крупными флаконами, камера выше
+      const dist = Math.max((this.R * 0.95) / (t * aspect), (HT * 1.2) / t);
+      this.base.pos.set(0, dist * 0.42, dist);
+      this.base.look.set(0, HT * 0.35, 0);
+    } else {
+      const dist = Math.max(span / (t * aspect) + this.R * 0.5, (HT * 1.35) / t);
+      this.base.pos.set(0, HT * 0.5 + dist * 0.22, dist);
+      this.base.look.set(0, HT * 0.3, 0);
+    }
     // крупный план: флакон слева от карточки (компьютер) или над ней (телефон)
-    const nd = this.portrait ? HT * 3.4 : HT * 2.3;
-    const shift = this.portrait ? 0 : HT * 0.32;
-    this.near.pos.set(shift, HT * 0.6, this.R + nd);
-    this.near.look.set(shift, this.portrait ? HT * 0.2 : HT * 0.46, this.R);
+    const bh = HT * this.S; // высота флакона на кольце
+    const nd = this.portrait ? bh * 3.4 : bh * 2.3;
+    const shift = this.portrait ? 0 : bh * 0.32;
+    this.near.pos.set(shift, bh * 0.6, this.R + nd);
+    this.near.look.set(shift, this.portrait ? bh * 0.2 : bh * 0.46, this.R);
     this.force = true;
     this.loop();
   }
