@@ -353,7 +353,7 @@ function Arrow({ dir, onClick, solid }: { dir: 1 | -1; onClick: () => void; soli
       type="button"
       onClick={onClick}
       aria-label={dir < 0 ? "Предыдущий аромат" : "Следующий аромат"}
-      className={`grid size-11 shrink-0 place-items-center rounded-full text-gold ring-1 ring-gold/30 transition-[background-color,box-shadow,transform] duration-200 hover:bg-gold/10 hover:ring-gold/60 active:scale-95 ${solid ? "bg-white/85 shadow-[0_6px_20px_-8px_rgba(60,40,20,.35)] backdrop-blur-sm" : ""}`}
+      className={`grid size-11 shrink-0 place-items-center rounded-full text-gold ring-1 ring-gold/30 transition-[background-color,box-shadow,transform] duration-200 hover:bg-gold/10 hover:ring-gold/60 active:scale-95 ${solid ? "bg-card/85 shadow-[0_6px_20px_-8px_rgba(60,40,20,.35)] backdrop-blur-sm" : ""}`}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
         <path d={dir < 0 ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} strokeLinecap="round" strokeLinejoin="round" />
@@ -398,7 +398,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.7, delay: reduce ? 0 : 0.7, ease: EASE } }}
         exit={{ opacity: 0, y: 12, filter: "blur(6px)", transition: { duration: 0.22 } }}
-        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-white/93 p-5 shadow-[0_30px_80px_-30px_rgba(70,45,20,.35)] ring-1 ring-ink/10 sm:p-7"
+        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-card/93 p-5 shadow-[0_30px_80px_-30px_rgba(70,45,20,.35)] ring-1 ring-ink/10 sm:p-7"
       >
         <motion.div ref={first} variants={stagger} custom={reduce ? 0 : 0.8} initial="hidden" animate="show" className="flex flex-col">
           <motion.p variants={rise} className="text-[11px] font-medium uppercase tracking-[0.28em] text-soft">

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { buildBottle, HT, softboxEnv, type Bottle3DSpec } from "./bottle3d";
 import { buildPhotoBottle } from "./photo-bottle";
 import { LivingRing } from "./living-ring";
+import { getTheme, onTheme } from "@/lib/theme";
 import type { PhotoBottleData } from "@/data/photo-bottles";
 
 /** флакон витрины: стеклянный 3D (Bottle3DSpec) или фото-флакон с листа снимков */
@@ -70,6 +71,7 @@ export class GlassRing {
   private hoverI: number | null = null;
   private stirAt: { x: number; z: number; t: number } | null = null;
   private hitP = new THREE.Vector3();
+  private offTheme: () => void;
   /** раскрытие витрины прокруткой: цель (от ScrollTrigger) и плавное текущее значение, 0 … 1 */
   private unfoldT = 0;
   private unfold = 0;
@@ -140,6 +142,13 @@ export class GlassRing {
     const dh = Math.max(...specs.map(depthOf)) * this.S;
     this.living = new LivingRing({ R: this.R, half: dh + Math.max(0.75, HT * this.S * 0.22), dh, touch, env: this.env });
     this.scene.add(this.living.group);
+    // тема: подиум и вода перекрашиваются плавно
+    this.living.setDark(getTheme() === "dark", true);
+    this.offTheme = onTheme(() => {
+      this.living.setDark(getTheme() === "dark");
+      this.force = true;
+      this.loop();
+    });
 
     const loader = new THREE.TextureLoader();
     let pending = specs.reduce((n, s) => n + ("photo" in s ? 2 : (s.label ? 1 : 0) + (s.photoCap ? 1 : 0)), 0);
@@ -709,6 +718,7 @@ export class GlassRing {
         lv.ripple(this.q.x, this.q.z, 0.3 + Math.random() * 0.3);
       }
     }
+    if (lv.fading) moving = true;
     lv.update(dt, angVel);
     lv.renderReflection(this.renderer, this.camera);
 
@@ -729,6 +739,7 @@ export class GlassRing {
     cv.removeEventListener("pointerleave", this.onLeave);
     this.bottles.forEach((x) => x.b.dispose());
     this.living.dispose();
+    this.offTheme();
     this.extra.forEach((x) => x.dispose());
     this.env.dispose();
     this.renderer.dispose();

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { cssColor, onTheme } from "@/lib/theme";
 
 /**
  * Фон всего сайта — матовая бумага, под которой спрятан гипсовый барельеф на всю высоту страницы:
@@ -31,25 +32,31 @@ uniform vec2 page;     // ширина и высота страницы, px
 uniform float sheetH;  // высота одного снимка на странице, px
 uniform float scroll;  // прокрутка, px
 uniform float fade;    // общее «таяние» после остановки мыши (1 → 0)
+uniform vec3 paperC;   // цвет бумаги (светлая или тёмно-серая тема)
+uniform float lift;    // на тёмной бумаге рельеф проявляем сильнее
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main(){
   vec2 fc = gl_FragCoord.xy;
   float py = scroll + res.y - fc.y;                 // точка на странице, сверху вниз
   float k = smoothstep(0.0, 1.0, texture2D(mask, vec2(fc.x / page.x, py / page.y)).a) * fade;
-  vec3 paper = vec3(0.945, 0.937, 0.918);
+  vec3 paper = paperC;
   vec3 col = paper;
   if (k > 0.002) {
     float i = mod(floor(py / sheetH), 3.0);
     vec2 uv = vec2(fc.x / page.x, fract(py / sheetH));
     float v = i < 0.5 ? texture2D(r0, uv).r : i < 1.5 ? texture2D(r1, uv).r : texture2D(r2, uv).r;
     float ratio = 0.45 + v * 0.8;                   // как в подготовке снимков: 1.0 — ровная бумага
-    col = paper * mix(1.0, ratio, k);
+    col = paper * mix(1.0, ratio, k) + (ratio - 1.0) * k * lift;
   }
   col -= 0.012 * (hash(floor(fc)) - 0.5);           // зерно бумаги
   gl_FragColor = vec4(col, 1.0);
 }`;
 
-const PAPER = "#f1efea";
+/** цвет токена (#rrggbb) → значения как есть, без перевода в линейное — шейдер выводит их напрямую */
+const rgb = (hex: string) => {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+};
 const HOLD = 0.8; // с — рельеф держится после остановки мыши
 const MELT = 3.4; // с — потом медленно тает
 
@@ -93,7 +100,10 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       sheetH: { value: 1 },
       scroll: { value: 0 },
       fade: { value: 1 },
+      paperC: { value: rgb(cssColor("--color-paper") || "#f1efea") },
+      lift: { value: 0 },
     };
+    uniforms.lift.value = document.documentElement.dataset.theme === "dark" ? 0.09 : 0;
     const scene = new THREE.Scene();
     const camera = new THREE.Camera();
     const geometry = new THREE.PlaneGeometry(2, 2);
@@ -226,6 +236,26 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       fit();
       draw();
     };
+    // смена темы: бумага плавно перетекает в новый цвет
+    let traf = 0;
+    const offTheme = onTheme(() => {
+      const from = uniforms.paperC.value.clone();
+      const to = rgb(cssColor("--color-paper") || "#f1efea");
+      const lift0 = uniforms.lift.value;
+      const lift1 = document.documentElement.dataset.theme === "dark" ? 0.09 : 0;
+      const t0 = performance.now();
+      cancelAnimationFrame(traf);
+      const step = () => {
+        const k = Math.min(1, (performance.now() - t0) / 700);
+        const e = k * k * (3 - 2 * k);
+        uniforms.paperC.value.lerpVectors(from, to, e);
+        uniforms.lift.value = lift0 + (lift1 - lift0) * e;
+        draw();
+        if (k < 1) traf = requestAnimationFrame(step);
+      };
+      traf = requestAnimationFrame(step);
+    });
+
     const ro = new ResizeObserver(resize);
     ro.observe(el);
     ro.observe(document.body);
@@ -237,6 +267,8 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(sraf);
       ro.disconnect();
+      offTheme();
+      cancelAnimationFrame(traf);
       window.removeEventListener("pointermove", onPointer);
       window.removeEventListener("scroll", onScroll);
       el.removeChild(renderer.domElement);
@@ -249,7 +281,7 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
     };
   }, []);
 
-  return <div ref={ref} aria-hidden className={`overflow-hidden ${className}`} style={{ background: PAPER }} />;
+  return <div ref={ref} aria-hidden className={`overflow-hidden ${className}`} style={{ background: "var(--color-paper)" }} />;
 }
 
 export default ReliefPaper;

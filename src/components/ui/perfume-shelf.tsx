@@ -300,7 +300,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
 
   return (
     <motion.div role="dialog" aria-modal="true" aria-label={`${a.brand} ${a.name}`} className="fixed inset-0 z-50 overflow-y-auto overscroll-contain">
-      <motion.div className="fixed inset-0 bg-[#f7f4ef]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
+      <motion.div className="fixed inset-0 bg-night" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
       <div className="relative mx-auto grid min-h-full max-w-[1100px] grid-cols-1 items-center gap-8 px-5 pt-16 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14">
         <div className="relative flex flex-col items-center justify-center md:h-[calc(100dvh-7rem)]">
           <motion.div
@@ -344,7 +344,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
                     return (
                       <label
                         key={x.label}
-                        className={`flex cursor-pointer items-center justify-between rounded-xl border bg-white/80 px-4 py-3 text-[14px] transition-[border-color,box-shadow] duration-150 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-gold ${
+                        className={`flex cursor-pointer items-center justify-between rounded-xl border bg-card/80 px-4 py-3 text-[14px] transition-[border-color,box-shadow] duration-150 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-gold ${
                           on ? "border-ink shadow-[0_0_0_1px_var(--color-ink)]" : "border-[#ddd5ca] hover:border-soft"
                         }`}
                       >
@@ -358,7 +358,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
               </fieldset>
 
               <div className="mt-6 flex items-stretch gap-3">
-                <div className="flex items-center rounded-xl border border-[#ddd5ca] bg-white/80">
+                <div className="flex items-center rounded-xl border border-ink/15 bg-card/80">
                   <button type="button" aria-label="Меньше" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty === 1} className="grid h-full w-11 place-items-center rounded-l-xl disabled:text-[#d6cec3]">
                     <Minus className="size-4" />
                   </button>
@@ -371,7 +371,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
                   type="button"
                   onClick={add}
                   className={`h-12 flex-1 rounded-full text-xs font-semibold uppercase tracking-[0.2em] transition-[filter,transform] active:scale-[0.98] ${
-                    inCart ? "bg-white text-gold ring-1 ring-gold/60" : "bg-[linear-gradient(180deg,#c9a463,#9a7438)] text-white hover:brightness-110"
+                    inCart ? "bg-card text-gold ring-1 ring-gold/60" : "bg-[linear-gradient(180deg,#c9a463,#9a7438)] text-white hover:brightness-110"
                   }`}
                 >
                   <span aria-live="polite">{inCart ? "В корзине" : `В корзину · ${sum(variant.price * qty)}`}</span>

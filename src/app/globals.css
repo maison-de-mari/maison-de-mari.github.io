@@ -8,6 +8,9 @@
   --color-ink: #1f1914;
   --color-soft: #6e6357;
   --color-gold: #9a7438;
+  /* бумага фона и карточки/кнопки */
+  --color-paper: #f1efea;
+  --color-card: #ffffff;
   --font-sans: var(--font-jost), "Helvetica Neue", Arial, system-ui, sans-serif;
   --font-script: var(--font-pinyon), cursive;
   --font-serif: var(--font-cormorant), "Times New Roman", serif;
@@ -19,6 +22,29 @@
   --color-background: var(--color-night);
   --color-foreground: var(--color-ink);
   --color-muted-foreground: var(--color-soft);
+}
+
+/* тёмно-серая тема: тёплый графит, светлый текст, золото чуть ярче — для контраста */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-night: #242322;
+  --color-ink: #ece6dc;
+  --color-soft: #a69d91;
+  --color-gold: #c9a463;
+  --color-paper: #262524;
+  --color-card: #302e2c;
+}
+
+/* на время смены темы цвета перетекают плавно */
+.theme-fade,
+.theme-fade * {
+  transition:
+    background-color 0.7s ease,
+    color 0.7s ease,
+    border-color 0.7s ease,
+    fill 0.7s ease,
+    stroke 0.7s ease,
+    box-shadow 0.7s ease !important;
 }
 
 /* фон — только у html: у body прозрачный, иначе он закрывает фон-сетку (она под страницей, z-index −10) */

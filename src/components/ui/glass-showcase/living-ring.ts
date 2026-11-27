@@ -40,6 +40,7 @@ uniform vec2 edges;   // внутренний и внешний край вод�
 uniform vec3 body;
 uniform vec3 deep;
 uniform vec3 gold;
+uniform vec3 sky;     // «небо», что отражается у пологих взглядов: светлая бумага или графит
 varying vec3 vW;
 varying float vD;
 varying float vS;
@@ -85,7 +86,7 @@ void main(){
   vec4 rf = texture2D(refl, gl_FragCoord.xy / res + n.xz * 0.09);
   c = mix(c, rf.rgb, rf.a * mix(0.5, 0.92, fres));
   // небо (светлая бумага) у пологих взглядов
-  c = mix(c, vec3(1.0, 0.99, 0.97), fres * 0.45 * (1.0 - rf.a));
+  c = mix(c, sky, fres * 0.45 * (1.0 - rf.a));
   // блики
   vec3 L = normalize(vec3(-0.35, 0.5, -1.0));
   float s = max(dot(reflect(-V, n), L), 0.0);
@@ -286,6 +287,10 @@ export class LivingRing {
   private keep: { dispose(): void }[] = [];
   private sweeps: (Sweep | Cap)[] = [];
   private v = new THREE.Vector3();
+  private plaster!: THREE.MeshStandardMaterial;
+  private shadow!: THREE.MeshBasicMaterial;
+  /** перетекание цветов при смене темы: from → to за ~0.7 с */
+  private pal = { t: 1, from: [] as THREE.Color[], to: [] as THREE.Color[] };
 
   constructor(opts: { R: number; half: number; dh: number; touch: boolean; env: THREE.Texture }) {
     const { R, half, dh, touch } = opts;
@@ -323,6 +328,7 @@ export class LivingRing {
           body: { value: new THREE.Color("#f1ece5") },
           deep: { value: new THREE.Color("#ddd3cc") },
           gold: { value: new THREE.Color("#e0b56a") },
+          sky: { value: new THREE.Color("#fffcf7") },
         },
         vertexShader: waterVert,
         fragmentShader: waterFrag,
@@ -364,7 +370,7 @@ export class LivingRing {
         [b - 0.02, bot],
       ] as [number, number][]
     ).map(([x, y]) => [x - R, y]);
-    const plaster = k(new THREE.MeshStandardMaterial({ color: "#f6f2ec", roughness: 0.62, envMapIntensity: 1.25, side: THREE.DoubleSide }));
+    const plaster = (this.plaster = k(new THREE.MeshStandardMaterial({ color: "#f6f2ec", roughness: 0.62, envMapIntensity: 1.25, side: THREE.DoubleSide })));
     add(new Sweep(polyline(rim, true), SEG, true), plaster);
     // торцы появляются, когда круг разомкнут
     add(new Cap([...rim].reverse(), 0), plaster);
@@ -411,7 +417,7 @@ export class LivingRing {
         false,
         (j, kk) => [kk / (SH - 1), 0.5],
       ),
-      k(new THREE.MeshBasicMaterial({ map: st, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide })),
+      (this.shadow = k(new THREE.MeshBasicMaterial({ map: st, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }))),
       -1,
     );
 
@@ -456,6 +462,32 @@ export class LivingRing {
 
     this.bendAll();
     this.updatePetals(0, 0);
+  }
+
+  // ───────────────────────── тема
+
+  /** цвета подиума: вода (верх, глубина, «небо»), гипс, тень */
+  private targets() {
+    const u = this.mat.uniforms;
+    return [u.body.value, u.deep.value, u.sky.value, this.plaster.color, this.shadow.color] as THREE.Color[];
+  }
+
+  /** светлая тема — гипс и молочная вода; тёмная — тёмный камень, графитовая вода, тень темнее фона */
+  setDark(dark: boolean, instant = false) {
+    const hex = dark ? ["#34312e", "#262422", "#4b4743", "#3d3a37", "#000000"] : ["#f1ece5", "#ddd3cc", "#fffcf7", "#f6f2ec", "#ffffff"];
+    const to = hex.map((h) => new THREE.Color(h));
+    const cur = this.targets();
+    if (instant) {
+      cur.forEach((c, i) => c.copy(to[i]));
+      this.pal.t = 1;
+      return;
+    }
+    this.pal = { t: 0, from: cur.map((c) => c.clone()), to };
+  }
+
+  /** идёт перетекание цветов — нужны кадры */
+  get fading() {
+    return this.pal.t < 1;
   }
 
   // ───────────────────────── форма
@@ -553,6 +585,11 @@ export class LivingRing {
 
   update(dt: number, ringVel: number) {
     this.time += dt;
+    if (this.pal.t < 1) {
+      this.pal.t = Math.min(1, this.pal.t + dt / 0.7);
+      const e = this.pal.t * this.pal.t * (3 - 2 * this.pal.t);
+      this.targets().forEach((c, i) => c.lerpColors(this.pal.from[i], this.pal.to[i], e));
+    }
     this.mat.uniforms.time.value = this.time;
     this.flow += (ringVel - this.flow) * (1 - Math.exp(-dt * 1.4));
     this.updatePetals(dt, this.flow);

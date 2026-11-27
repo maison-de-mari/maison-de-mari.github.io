@@ -6,6 +6,8 @@ const jost = Jost({ subsets: ["latin", "cyrillic"], variable: "--font-jost", dis
 const serif = Cormorant_Garamond({ subsets: ["latin", "cyrillic"], weight: ["300", "400"], variable: "--font-cormorant", display: "swap" });
 const script = Pinyon_Script({ subsets: ["latin"], weight: "400", variable: "--font-pinyon", display: "swap" });
 
+const THEME_SCRIPT = `try{if(localStorage.getItem("mdm-theme")==="dark")document.documentElement.dataset.theme="dark"}catch(e){}`;
+
 export const metadata: Metadata = {
   title: "Maison De Mari — парфюмерный бутик в Ташкенте",
   description: "Распив 5 и 10 мл и флаконы под заказ: Louis Vuitton, Creed, Tom Ford, MFK, Orto Parisi и другие.",
@@ -19,7 +21,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${jost.variable} ${serif.variable} ${script.variable}`}>
+    <html lang="ru" className={`${jost.variable} ${serif.variable} ${script.variable}`} suppressHydrationWarning>
+      <head>
+        {/* тема — до первой отрисовки, чтобы тёмная не мигала светлой */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
