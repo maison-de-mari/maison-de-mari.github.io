@@ -3,43 +3,51 @@
 import { motion, useReducedMotion } from "framer-motion";
 
 /**
- * Текст проявляется по словам: каждое слово медленно темнеет из бледного и чуть поднимается,
- * слова — одно за другим. Срабатывает, когда текст попадает на экран (один раз),
- * или сразу при смене текста (key — сам текст), если once=false.
- * Для экранного диктора — весь текст целиком (aria-label), слова скрыты.
+ * Текст проявляется по буквам, как на immersive-g.com: буквы по очереди слева направо выплывают
+ * из прозрачности, и каждая начинает раньше, чем закончилась предыдущая, — мягкая волна света по строке.
+ * Только прозрачность, без сдвигов. Срабатывает, когда текст попадает на экран (один раз),
+ * или сразу при монтировании (inView=false). Для экранного диктора — весь текст целиком (aria-label).
  */
 type Props = {
   text: string;
   className?: string;
   as?: "span" | "h1" | "h2" | "h3" | "p";
   delay?: number;
-  /** пауза между словами, с */
+  /** оставлено для совместимости: скорость волны теперь считается по длине текста */
   stagger?: number;
   /** запускать при появлении на экране (true) или сразу при монтировании (false) */
   inView?: boolean;
 };
 
-const EASE = [0.22, 1, 0.36, 1] as const;
+/** доля общего времени, на которую буква «перекрывает» следующие (как fadeDurationOffset у них) */
+const OVERLAP = 0.2;
 
-export function RevealText({ text, className = "", as = "span", delay = 0, stagger = 0.12, inView = true }: Props) {
+export function RevealText({ text, className = "", as = "span", delay = 0, inView = true }: Props) {
   const reduce = useReducedMotion();
   const Tag = motion[as];
   const words = text.split(" ");
-  const hidden = { opacity: 0.06, y: "0.18em" };
-  const shown = { opacity: 1, y: "0em" };
+  const n = Math.max(1, text.replace(/\s/g, "").length);
+  // вся волна: короткие подписи — быстро, длинные строки — дольше, но не тянуть
+  const total = Math.min(2.4, 0.55 + n * 0.04);
+  let i = 0;
   return (
     <Tag className={className} aria-label={text}>
-      {words.map((w, i) => (
-        <span key={`${w}-${i}`} aria-hidden>
-          <motion.span
-            className="inline-block"
-            initial={reduce ? false : hidden}
-            {...(inView ? { whileInView: shown, viewport: { once: true, amount: 0.5 } } : { animate: shown })}
-            transition={{ duration: 1.6, delay: delay + i * stagger, ease: EASE }}
-          >
-            {w}
-          </motion.span>
-          {i < words.length - 1 ? " " : ""}
+      {words.map((w, wi) => (
+        <span key={`${w}-${wi}`} aria-hidden className="whitespace-nowrap">
+          {Array.from(w).map((ch, ci) => {
+            const k = i++;
+            return (
+              <motion.span
+                key={ci}
+                initial={reduce ? false : { opacity: 0 }}
+                {...(inView ? { whileInView: { opacity: 1 }, viewport: { once: true, amount: 0.5 } } : { animate: { opacity: 1 } })}
+                transition={{ duration: total * (1 / n + OVERLAP), delay: delay + (total * k) / n, ease: "linear" }}
+              >
+                {ch}
+              </motion.span>
+            );
+          })}
+          {wi < words.length - 1 ? " " : ""}
         </span>
       ))}
     </Tag>

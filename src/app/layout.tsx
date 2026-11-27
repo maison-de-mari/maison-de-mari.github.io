@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Jost, Pinyon_Script } from "next/font/google";
+import { Jost, Pinyon_Script, Tinos } from "next/font/google";
 import "./globals.css";
 
 const jost = Jost({ subsets: ["latin", "cyrillic"], variable: "--font-jost", display: "swap" });
-const serif = Cormorant_Garamond({ subsets: ["latin", "cyrillic"], weight: ["300", "400"], variable: "--font-cormorant", display: "swap" });
+// заголовки — классический Times (как PS Times на immersive-g.com): системный Times New Roman, а где его нет (Android) — Tinos
+const serif = Tinos({ subsets: ["latin", "cyrillic"], weight: "400", variable: "--font-tinos", display: "swap", preload: false });
 const script = Pinyon_Script({ subsets: ["latin"], weight: "400", variable: "--font-pinyon", display: "swap" });
 
 const THEME_SCRIPT = `try{if(localStorage.getItem("mdm-theme")==="dark")document.documentElement.dataset.theme="dark"}catch(e){}`;

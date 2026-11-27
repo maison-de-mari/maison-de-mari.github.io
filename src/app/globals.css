@@ -13,7 +13,7 @@
   --color-card: #ffffff;
   --font-sans: var(--font-jost), "Helvetica Neue", Arial, system-ui, sans-serif;
   --font-script: var(--font-pinyon), cursive;
-  --font-serif: var(--font-cormorant), "Times New Roman", serif;
+  --font-serif: "Times New Roman", Times, var(--font-tinos), serif;
 }
 
 :root {
