@@ -117,9 +117,11 @@ export class GlassRing {
     this.step = (Math.PI * 2) / this.slots;
     const touch = (this.touch = window.matchMedia("(pointer: coarse)").matches);
     this.alive = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !touch, alpha: true, powerPreference: "high-performance" }));
+    // сглаживание краёв и на телефоне: мобильные видеокарты делают его почти бесплатно, а без него флаконы «рваные»
+    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }));
     r.setClearColor(0x000000, 0); // прозрачный — за витриной виден фон страницы (сетка)
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.5 : 1.75));
+    // на телефоне кольцо по ширине экрана и флаконы мелкие — рисуем в 2× (было 1.5×, выходило мыльно)
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 2 : 1.75));
     r.toneMapping = THREE.NeutralToneMapping;
     r.toneMappingExposure = 1.05;
     const cv = r.domElement;
