@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildPhotoCap, type PhotoCap } from "./photo-cap";
 
 /**
  * Фотореалистичный стеклянный флакон с парфюмом (Three.js) — по утверждённому образцу flakon-namuna.html.
@@ -31,6 +32,8 @@ export type Bottle3DSpec = {
   label?: string;
   /** этикетка — печать прямо на стекле (картинка с прозрачным фоном), а не бумага */
   labelPrint?: boolean;
+  /** крышка из фотографий (лист снимков с разных сторон) вместо нарисованной */
+  photoCap?: PhotoCap;
   shape: Shape;
 };
 
@@ -158,7 +161,13 @@ const FIN: Record<Exclude<Finish, "glass">, () => THREE.Material> = {
 };
 
 /** Флакон: сцена, обновление жидкости за шаг; уничтожение */
-export function buildBottle(spec: Bottle3DSpec, bg: THREE.ColorRepresentation, envMap: THREE.Texture, labelTex?: THREE.Texture) {
+export function buildBottle(
+  spec: Bottle3DSpec,
+  bg: THREE.ColorRepresentation,
+  envMap: THREE.Texture,
+  labelTex?: THREE.Texture,
+  capTex?: THREE.Texture,
+) {
   const sh = spec.shape;
   const W = sh.aspect * HT;
   const bw = (sh.body.width ?? 1) * W;
@@ -450,6 +459,12 @@ export function buildBottle(spec: Bottle3DSpec, bg: THREE.ColorRepresentation, e
       ]);
     }
     bottle.add(new THREE.Mesh(keep(geo), mat));
+  }
+
+  if (spec.photoCap && capTex) {
+    const pc = buildPhotoCap(spec.photoCap, HT, capTex);
+    bottle.add(pc.mesh);
+    disposables.push(pc);
   }
 
   // ── этикетка — настоящая картинка

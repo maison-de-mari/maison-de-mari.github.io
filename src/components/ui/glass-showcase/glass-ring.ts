@@ -89,7 +89,7 @@ export class GlassRing {
     this.buildTable();
 
     const loader = new THREE.TextureLoader();
-    let pending = specs.filter((s) => s.label).length;
+    let pending = specs.filter((s) => s.label).length + specs.filter((s) => s.photoCap).length;
     const done = () => {
       if (--pending <= 0) this.ev.onReady();
       this.force = true;
@@ -104,7 +104,14 @@ export class GlassRing {
         tex.anisotropy = 8;
         this.extra.push(tex);
       }
-      const b = buildBottle(spec, BG, this.env, tex);
+      let capTex: THREE.Texture | undefined;
+      if (spec.photoCap) {
+        capTex = loader.load(`${base}${spec.photoCap.src}`, done, undefined, done);
+        capTex.colorSpace = THREE.SRGBColorSpace;
+        capTex.anisotropy = 8;
+        this.extra.push(capTex);
+      }
+      const b = buildBottle(spec, BG, this.env, tex, capTex);
       b.state.yaw = 0;
       b.step(0.016);
       // всё содержимое сцены флакона (флакон, тень, каустика) — в одну группу на кольце
