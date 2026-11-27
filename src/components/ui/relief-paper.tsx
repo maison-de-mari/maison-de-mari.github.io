@@ -17,6 +17,8 @@ import { cssColor, onTheme } from "@/lib/theme";
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const SHEETS = ["/relief/r1.webp", "/relief/r2.webp", "/relief/r3.webp"];
 const ASPECT = 2560 / 1440; // высота снимка к ширине
+/** параллакс: бумага с рельефом едет медленнее страницы — кажется, что она глубже */
+const DEPTH = 0.55;
 
 const vertexShader = /* glsl */ `
 void main() { gl_Position = vec4(position, 1.0); }`;
@@ -111,7 +113,7 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
     scene.add(new THREE.Mesh(geometry, material));
 
     const draw = () => {
-      uniforms.scroll.value = window.scrollY;
+      uniforms.scroll.value = window.scrollY * DEPTH;
       maskTex.needsUpdate = true;
       renderer.render(scene, camera);
     };
@@ -139,7 +141,8 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
     // размеры страницы: маска и высота снимка
     const fit = () => {
       const pw = document.documentElement.clientWidth;
-      const ph = document.documentElement.scrollHeight;
+      // «страница» рельефа короче настоящей — она прокручивается медленнее
+      const ph = Math.ceil((document.documentElement.scrollHeight - window.innerHeight) * DEPTH + window.innerHeight);
       if (pw === uniforms.page.value.x && ph === uniforms.page.value.y) return;
       uniforms.page.value.set(pw, ph);
       uniforms.sheetH.value = pw * ASPECT;
@@ -196,7 +199,7 @@ export function ReliefPaper({ className = "" }: { className?: string }) {
       if (e.clientX === lastClient.x && e.clientY === lastClient.y) return;
       lastClient = { x: e.clientX, y: e.clientY };
       fit();
-      const p = { x: e.clientX / MS, y: (e.clientY + window.scrollY) / MS };
+      const p = { x: e.clientX / MS, y: (e.clientY + window.scrollY * DEPTH) / MS };
       // дрожание руки (пара пикселей) — не движение: мажем, только когда курсор ушёл от прошлого мазка на ≥12 px
       if (last && Math.hypot(p.x - last.x, p.y - last.y) < 2) return;
       // если рельеф уже таял — подхватываем: оставшееся видно как есть, след продолжается

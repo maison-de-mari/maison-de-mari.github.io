@@ -16,6 +16,7 @@ import { aromas as ALL, FRONT_ONLY, minSum, minUsd, type AromaWithImages } from 
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { MOODS, MOOD_OF, type Mood } from "@/data/moods";
 import { cart, sum, useCart } from "@/lib/cart";
+import { gsap, MOTION_OK, useGSAP } from "@/lib/gsap";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TG = "https://t.me/Maisondemari";
@@ -79,6 +80,31 @@ function smooth(e0: number, e1: number, x: number) {
 // ───────────────────────── полки
 
 export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
+  const root = useRef<HTMLElement>(null);
+
+  // полки появляются при прокрутке: флаконы поднимаются волной, подписи проявляются, по стеклу бежит блик;
+  // ряды чуть отстают от страницы (параллакс) — появляется глубина
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add(MOTION_OK, () => {
+        gsap.utils.toArray<HTMLElement>("[data-shelf-row]").forEach((row) => {
+          const tl = gsap.timeline({ scrollTrigger: { trigger: row, start: "top 88%", once: true } });
+          tl.from(row.querySelectorAll("[data-shelf-bottle]"), { y: 70, autoAlpha: 0, duration: 1, ease: "power3.out", stagger: 0.09 })
+            .from(row.querySelectorAll("[data-shelf-label]"), { y: 14, autoAlpha: 0, duration: 0.7, ease: "power2.out", stagger: 0.06 }, 0.3)
+            .fromTo(
+              row.querySelector("[data-shelf-glint]"),
+              { xPercent: -120, autoAlpha: 1 },
+              { xPercent: 950, duration: 1.3, ease: "power2.inOut", onComplete: function () { gsap.set(this.targets(), { autoAlpha: 0 }); } },
+              0.15,
+            );
+          gsap.fromTo(row, { y: 34 }, { y: -34, ease: "none", scrollTrigger: { trigger: row, start: "top bottom", end: "bottom top", scrub: true } });
+        });
+      });
+      return () => mm.revert();
+    },
+    { scope: root },
+  );
   const [openId, setOpenId] = useState<string | null>(null);
   const open = items.find((a) => a.slug === openId) ?? null;
 
@@ -94,7 +120,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
   }, [openId]);
 
   return (
-    <section id="shelf" aria-labelledby="shelf-title" className="relative w-full scroll-mt-0 text-ink">
+    <section ref={root} id="shelf" aria-labelledby="shelf-title" className="relative w-full scroll-mt-0 text-ink">
       <LayoutGroup>
         <div className="mx-auto w-full max-w-[1100px] px-4 pt-20 pb-16 sm:px-6">
           <header className="mb-14 text-center">
@@ -114,10 +140,10 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                   <span aria-hidden className="h-px flex-1 bg-gold/40" />
                 </h3>
                 {chunk(list, 4).map((row, r) => (
-                  <div key={r} className="relative mb-14">
+                  <div key={r} data-shelf-row className="relative mb-14">
                     <ul className="relative z-10 grid grid-cols-4 items-end gap-3 px-2 sm:gap-8 sm:px-8">
                       {row.map((a) => (
-                        <li key={a.slug} className="flex flex-col items-center">
+                        <li key={a.slug} data-shelf-bottle className="flex flex-col items-center">
                           {openId === a.slug ? (
                             <div className="aspect-[2/3] w-full max-w-[170px]" />
                           ) : (
@@ -158,7 +184,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                     <GlassShelf />
                     <div className="mt-6 grid grid-cols-4 gap-3 px-2 sm:gap-8 sm:px-8">
                       {row.map((a) => (
-                        <div key={a.slug} className="min-w-0 text-center">
+                        <div key={a.slug} data-shelf-label className="min-w-0 text-center">
                           <div className="truncate text-[10px] font-medium uppercase tracking-[0.2em] text-gold sm:text-[11px]">{a.brand}</div>
                           <div className="mt-1 truncate font-serif text-[16px] leading-tight sm:text-[19px]">{a.name}</div>
                           <div className="mt-0.5 text-[12px] text-soft tabular-nums sm:text-[13px]">{priceFrom(a)}</div>
@@ -187,6 +213,10 @@ function GlassShelf() {
   const brass = "bg-[linear-gradient(to_right,#7d5f2e,#e9cf98_45%,#b48c4c_60%,#7d5f2e)]";
   return (
     <div aria-hidden className="relative -mt-[9px] h-[22px]">
+      {/* блик, который пробегает по стеклу, когда полка появляется (GSAP) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[21px] overflow-hidden rounded-[3px]">
+        <div data-shelf-glint className="invisible absolute inset-y-0 left-0 w-[12%] skew-x-[-30deg] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.95),transparent)]" />
+      </div>
       {/* верхняя плоскость: светлое стекло, к дальнему краю чуть темнее; блик бежит по диагонали */}
       <div className="absolute inset-x-0 top-0 h-[10px] overflow-hidden rounded-t-[3px] bg-[linear-gradient(to_bottom,rgba(205,226,219,0.35),rgba(236,245,241,0.75)_70%,rgba(255,255,255,0.9))] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-[3px]">
         <div className="absolute inset-y-0 left-[-10%] w-[45%] skew-x-[-35deg] bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.7),transparent)] opacity-70" />

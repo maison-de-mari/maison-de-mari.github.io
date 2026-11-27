@@ -2,8 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { gsap, MOTION_OK, ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
@@ -86,6 +85,8 @@ export function PerfumeCarousel({
   const [front, setFront] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
+  // камера внутри витрины (прокрутка): стрелки прячутся, подпись показывает флакон, на который смотрим
+  const [inside, setInside] = useState(false);
   const reduce = useReducedMotion();
 
   const pick = useCallback((i: number) => {
@@ -188,32 +189,41 @@ export function PerfumeCarousel({
     e.preventDefault();
   };
 
-  // прокрутка: сцена закреплена (pin), овал раскрывается в дугу, камера идёт вдоль — всё от одного прогресса (scrub)
-  useEffect(() => {
-    const el = stage.current;
-    if (!el || !glass || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    gsap.registerPlugin(ScrollTrigger);
-    const ctx = gsap.context(() => {
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: el,
-          start: "top top",
-          end: () => `+=${Math.round(window.innerHeight * 2.6)}`,
-          pin: true,
-          scrub: true,
-          invalidateOnRefresh: true,
-          onUpdate: (self) => {
-            const r = ring.current;
-            if (r && "setUnfold" in r) r.setUnfold(self.progress);
+  // прокрутка: сцена закреплена (pin), камера опускается в центр кольца и ведёт взгляд по кругу —
+  // всё от одного прогресса (scrub); отпустили прокрутку — мягкая доводка к ближайшему флакону (snap)
+  useGSAP(
+    () => {
+      const el = stage.current;
+      if (!el || !glass) return;
+      const mm = gsap.matchMedia();
+      mm.add(MOTION_OK, () => {
+        const n = glass.length;
+        // те же доли прогресса, что в GlassRing: спуск до 0.3, дальше флакон k — на 0.3 + 0.7·k/(n−1)
+        const stops = [0, ...Array.from({ length: n }, (_, k) => 0.3 + (0.7 * k) / Math.max(1, n - 1))];
+        const tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: el,
+            start: "top top",
+            end: () => `+=${Math.round(window.innerHeight * 4.5)}`,
+            pin: true,
+            scrub: true,
+            invalidateOnRefresh: true,
+            snap: { snapTo: stops, inertia: false, directional: false, duration: { min: 0.25, max: 0.7 }, delay: 0.12, ease: "power2.inOut" },
+            onUpdate: (self) => {
+              const r = ring.current;
+              if (r && "setUnfold" in r) r.setUnfold(self.progress);
+              setInside(self.progress > 0.02);
+            },
           },
-        },
+        });
+        tl.to(topText.current, { autoAlpha: 0, y: -50, ease: "none", duration: 0.16 }, 0).to({}, { duration: 1 }, 0);
       });
-      tl.to(topText.current, { autoAlpha: 0, y: -50, ease: "none", duration: 0.16 }, 0)
-        .to(bottomText.current, { autoAlpha: 0, y: 40, ease: "none", duration: 0.12 }, 0)
-        .to({}, { duration: 1 }, 0);
-    }, el);
-    return () => ctx.revert();
-  }, [glass]);
+      // шрифты меняют высоту текста — пересчитать места срабатывания
+      document.fonts?.ready.then(() => ScrollTrigger.refresh());
+      return () => mm.revert();
+    },
+    { scope: stage, dependencies: [glass] },
+  );
 
   const f = items[front];
   const open = sel !== null;
@@ -260,11 +270,13 @@ export function PerfumeCarousel({
         aria-hidden={open}
       >
         <div className="flex w-full max-w-xl items-center justify-between gap-3">
-          <Arrow dir={-1} onClick={() => ring.current?.turn(-1)} />
+          <div className={`transition-opacity duration-500 ${inside ? "pointer-events-none opacity-0" : ""}`}>
+            <Arrow dir={-1} onClick={() => ring.current?.turn(-1)} />
+          </div>
           <button
             ref={frontBtn}
             type="button"
-            onClick={() => pick(front)}
+            onClick={() => !inside && pick(front)}
             className="group min-h-11 min-w-0 flex-1 rounded-lg px-2 py-1 text-center"
             aria-label={`${f.brand} ${f.name}, ${priceFrom(f)} — открыть`}
           >
@@ -290,10 +302,12 @@ export function PerfumeCarousel({
               </motion.span>
             </AnimatePresence>
           </button>
-          <Arrow dir={1} onClick={() => ring.current?.turn(1)} />
+          <div className={`transition-opacity duration-500 ${inside ? "pointer-events-none opacity-0" : ""}`}>
+            <Arrow dir={1} onClick={() => ring.current?.turn(1)} />
+          </div>
         </div>
         <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.24em] text-soft/80">
-          Потяните витрину · нажмите на флакон
+          {inside ? "Прокручивайте — витрина вокруг вас" : "Потяните витрину · нажмите на флакон"}
         </p>
       </motion.div>
 

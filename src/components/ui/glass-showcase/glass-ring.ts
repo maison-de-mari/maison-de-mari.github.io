@@ -75,9 +75,9 @@ export class GlassRing {
   /** раскрытие витрины прокруткой: цель (от ScrollTrigger) и плавное текущее значение, 0 … 1 */
   private unfoldT = 0;
   private unfold = 0;
-  /** угол разреза кольца (между двумя дальними флаконами), пока витрина раскрыта */
-  private sigma: number | null = null;
-  private panTh = 0;
+  /** кольцо остановлено на время «внутрь витрины»; psi — куда смотрит камера из центра */
+  private frozen = false;
+  private psi = Math.PI;
   private q = new THREE.Vector3();
   private cp = new THREE.Vector3();
 
@@ -333,8 +333,8 @@ export class GlassRing {
   }
 
   /**
-   * Прогресс прокрутки 0 … 1 (ScrollTrigger, scrub): 0 — овал; дальше овал размыкается сзади и вытягивается
-   * в длинную С-образную дугу, а камера проходит вдоль неё; обратно — тот же путь до овала.
+   * Прогресс прокрутки 0 … 1 (ScrollTrigger, scrub): 0 — овал сверху; дальше камера опускается в центр кольца,
+   * флаконы поворачиваются к ней лицом, и прокрутка ведёт взгляд по кругу; обратно — тот же путь до овала.
    */
   setUnfold(p: number) {
     this.unfoldT = Math.min(1, Math.max(0, p));
@@ -528,26 +528,27 @@ export class GlassRing {
     let moving = this.down || this.force;
     this.force = false;
 
-    // раскрытие: мягко догоняем прогресс прокрутки (scrub), кольцо на это время не крутится
+    // «внутрь витрины»: мягко догоняем прогресс прокрутки (scrub); кольцо на это время стоит на месте
     const lv = this.living;
     const u0 = this.unfold;
     this.unfold += (this.unfoldT - this.unfold) * damp(14);
     if (Math.abs(this.unfoldT - this.unfold) < 1e-4) this.unfold = this.unfoldT;
     if (this.unfold !== u0) moving = true;
-    if (this.unfold > 0 && this.sigma === null) {
-      // ставим ближайший флакон точно вперёд и режем кольцо посередине между двумя дальними
+    if (this.unfold > 0 && !this.frozen) {
+      // ставим ближайший флакон точно вперёд — тогда точно напротив, на дальней стороне, тоже флакон
+      this.frozen = true;
       this.vel = 0;
-      const t = this.snap(this.target ?? this.ring);
-      this.target = t;
-      this.sigma = t + this.step * (Math.round((Math.PI - t) / this.step - 0.5) + 0.5);
+      this.target = this.snap(this.target ?? this.ring);
     }
-    if (this.unfold === 0 && this.sigma !== null) this.sigma = null;
+    if (this.unfold === 0) this.frozen = false;
     const pu = this.unfold;
     const sm = (a: number, b: number, x: number) => {
       const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
       return k * k * (3 - 2 * k);
     };
-    lv.setShape(sm(0, 0.5, pu), this.sigma ?? Math.PI);
+    // куда смотрим изнутри: сначала на дальний флакон, потом прокрутка ведёт взгляд по кругу почти на полный оборот
+    // равномерно: флакон k — точно при прогрессе 0.3 + 0.7·k/(n−1) (на эти точки доводит прокрутка)
+    this.psi = Math.PI + Math.PI * 2 * (1 - 1 / this.n) * Math.min(1, Math.max(0, (pu - 0.3) / 0.7));
 
     // кольцо: доводка к цели или инерция
     const prevRing = this.ring;
@@ -583,22 +584,22 @@ export class GlassRing {
     this.camera.position.lerpVectors(this.base.pos, this.near.pos, f);
     this.look.lerpVectors(this.base.look, this.near.look, f);
     if (pu > 0) {
-      // камера уходит к дуге и ведёт вдоль неё: сначала к левому концу, потом через всю коллекцию к правому
-      const pan = pu < 0.42 ? -0.8 * sm(0.06, 0.42, pu) : -0.8 + 1.6 * sm(0.42, 1, pu);
-      const th = (this.panTh = pan * (lv.phi / 2));
+      // камера перелетает над передним рядом и опускается в центр кольца, к самой воде, глядя на дальний флакон;
+      // дальше — стоит в центре и поворачивается вслед за прокруткой
       const bh = HT * this.S;
-      const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-      // видно ~ треть длины дуги на компьютере; на телефоне — ближе, чтобы флаконы не были крошечными
-      const dn = Math.min((this.R * 1.15) / (t * this.camera.aspect), (bh * (this.portrait ? 3.2 : 4.5)) / t);
-      lv.at(th, 0, bh * 0.42, this.q);
-      this.cp.set(Math.sin(th) * dn, dn * 0.26, Math.cos(th) * dn).add(this.q);
-      const w = sm(0, 0.34, pu);
+      const w = sm(0.02, 0.3, pu);
+      const dx = Math.sin(this.psi);
+      const dz = Math.cos(this.psi);
+      this.cp.set(-dx * this.R * 0.32, bh * 0.55 + Math.sin(Math.PI * w) * bh * 1.1, -dz * this.R * 0.32);
+      this.q.set(dx * this.R, bh * 0.45, dz * this.R);
       this.camera.position.lerp(this.cp, w);
       this.look.lerp(this.q, w);
     }
     this.camera.lookAt(this.look);
 
-    const front = this.slotAt(this.ring);
+    // подпись внизу — флакон напротив зрителя; изнутри — тот, на который сейчас смотрим
+    const front =
+      pu > 0.25 ? ((Math.round((this.psi - this.ring) / this.step) % this.slots) + this.slots) % this.slots : this.slotAt(this.ring);
     if (front < this.n && front !== this.front) {
       this.front = front;
       this.ev.onFront(front);
@@ -663,9 +664,10 @@ export class GlassRing {
         if (u.m) u.m.opacity = u.op * show * (1 - 0.4 * x.lift);
       }
       // основание — своя точка подиума (на круге или на дуге), флакон вертикален и смотрит наружу
+      // основание — своя точка подиума; изнутри флаконы плавно поворачиваются лицом к центру
       const th = lv.theta(a);
       lv.at(th, 0, up, x.g.position);
-      x.g.rotation.y = th + x.spin + twirl;
+      x.g.rotation.y = th + x.spin + twirl + Math.PI * sm(0.1, 0.3, pu);
       const s = x.b.state;
       // крен от вращения кольца (флакон «отстаёт»), плюс наклон к курсору при наведении
       const h = this.hover && this.hover.i === i && this.sel === null ? this.hover : null;
@@ -712,7 +714,7 @@ export class GlassRing {
       if (this.dropT <= 0) {
         this.dropT = 2.2 + Math.random() * 3.5;
         // там, куда смотрит камера: перёд овала или участок дуги
-        const th = (pu > 0 ? this.panTh : 0) + (Math.random() - 0.5) * (pu > 0 ? 0.5 : 2.4);
+        const th = (pu > 0.25 ? this.psi : 0) + (Math.random() - 0.5) * (pu > 0.25 ? 0.8 : 2.4);
         const r = lv.ri + (lv.ro - lv.ri) * (Math.random() < 0.5 ? 0.15 + Math.random() * 0.15 : 0.7 + Math.random() * 0.15);
         lv.at(th, r - this.R, 0, this.q);
         lv.ripple(this.q.x, this.q.z, 0.3 + Math.random() * 0.3);
