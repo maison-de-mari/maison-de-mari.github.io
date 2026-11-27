@@ -195,13 +195,7 @@ export function PerfumeCarousel({
       {tier === "rich" && <Scent tone="light" />}
       <div ref={host} className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`} />
 
-      {/* шапка */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pt-4 sm:px-8 sm:pt-6">
-        <a href={`${BASE}/`} className="pointer-events-auto font-script text-[2rem] leading-none text-gold sm:text-[2.4rem]">
-          Maison De Mari
-        </a>
-        <CartPill />
-      </header>
+      {/* шапка — общая, закреплённая: SiteNav */}
 
       {/* заголовок витрины */}
       <motion.div
@@ -326,36 +320,6 @@ function Arrow({ dir, onClick, solid }: { dir: 1 | -1; onClick: () => void; soli
         <path d={dir < 0 ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
-  );
-}
-
-function CartPill() {
-  const items = useCart();
-  const n = items.length;
-  return (
-    <motion.span
-      key={n}
-      initial={false}
-      animate={n ? { y: [0, -4, 1, 0] } : undefined}
-      transition={{ duration: 0.6, ease: [0.3, 1.6, 0.5, 1] }}
-      aria-live="polite"
-      className="pointer-events-auto inline-flex h-10 items-center gap-2.5 rounded-full bg-white/85 pl-4 pr-1.5 text-[11px] font-medium uppercase tracking-[0.22em] ring-1 ring-ink/15"
-    >
-      Корзина
-      <span className="relative grid h-7 min-w-7 place-items-center overflow-hidden rounded-full bg-gold px-2 text-xs font-semibold tracking-normal text-night tabular-nums">
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.span
-            key={n}
-            initial={{ y: "110%", opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "-110%", opacity: 0 }}
-            transition={{ duration: 0.45, ease: [0.2, 0.9, 0.3, 1.2] }}
-          >
-            {n}
-          </motion.span>
-        </AnimatePresence>
-      </span>
-    </motion.span>
   );
 }
 

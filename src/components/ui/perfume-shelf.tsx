@@ -94,7 +94,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
   }, [openId]);
 
   return (
-    <section aria-labelledby="shelf-title" className="relative w-full text-ink">
+    <section id="shelf" aria-labelledby="shelf-title" className="relative w-full scroll-mt-0 text-ink">
       <LayoutGroup>
         <div className="mx-auto w-full max-w-[1100px] px-4 pt-20 pb-16 sm:px-6">
           <header className="mb-14 text-center">

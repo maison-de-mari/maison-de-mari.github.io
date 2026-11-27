@@ -2,6 +2,7 @@ import { PerfumeCarousel } from "@/components/ui/perfume-carousel";
 import { PerfumeShelf } from "@/components/ui/perfume-shelf";
 import { ReliefPaper } from "@/components/ui/relief-paper";
 import { Snow } from "@/components/ui/snow";
+import { SiteNav } from "@/components/ui/site-nav";
 import type { RingSpec } from "@/components/ui/glass-showcase/glass-ring";
 import { getAroma, type AromaWithImages } from "@/data/aromas";
 import { GLASS_RING } from "@/data/glass-ring";
@@ -24,6 +25,7 @@ export default function Home() {
     <main>
       {/* фон всего сайта — бумага с гипсовым рельефом: проступает под курсором */}
       <ReliefPaper className="fixed inset-0 -z-10" />
+      <SiteNav />
       <PerfumeCarousel items={ringItems} glass={ring} />
       <PerfumeShelf />
       <Snow />
