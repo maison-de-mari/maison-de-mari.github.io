@@ -108,7 +108,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
             const list = items.filter((a) => MOOD_OF[a.slug] === mood);
             if (!list.length) return null;
             return (
-              <div key={mood} className="mb-6">
+              <div key={mood} id={`mood-${mood}`} className="mb-6 scroll-mt-24">
                 <h3 className="mb-6 flex items-center gap-4 text-[11px] font-medium uppercase tracking-[0.3em] text-gold">
                   <RevealText text={MOOD_TITLE[mood]} stagger={0.1} />
                   <span aria-hidden className="h-px flex-1 bg-gold/40" />
@@ -140,6 +140,16 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                                 draggable={false}
                                 className="absolute inset-0 size-full object-contain object-bottom"
                               />
+                              {/* отражение в верхней плоскости стекла */}
+                              {/* eslint-disable-next-line @next/next/no-img-element -- то же фото, отражённое */}
+                              <img
+                                src={thumb(a.slug)}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                draggable={false}
+                                className="pointer-events-none absolute inset-x-0 top-full h-full w-full -scale-y-100 object-contain object-bottom opacity-25 [mask-image:linear-gradient(to_bottom,black,transparent_7%)]"
+                              />
                             </motion.button>
                           )}
                         </li>
@@ -168,21 +178,40 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
   );
 }
 
-/** Стеклянная полка: прозрачная плита с зеленоватой полированной кромкой, бликом и тенью на стене */
+/**
+ * Стеклянная полка — толстое закалённое стекло:
+ * верхняя плоскость (видна сверху под углом, с бликом), зеленоватая кромка с яркими гранями,
+ * скруглённые торцы, латунные держатели; под полкой — мягкая тень, зелёный отсвет и полоска преломлённого света.
+ */
 function GlassShelf() {
+  const brass = "bg-[linear-gradient(to_right,#7d5f2e,#e9cf98_45%,#b48c4c_60%,#7d5f2e)]";
   return (
-    <div aria-hidden className="relative -mt-[5px] h-[18px]">
-      {/* верхняя плоскость стекла — светлая, почти прозрачная */}
-      <div className="absolute inset-x-0 top-0 h-[7px] bg-[linear-gradient(to_bottom,rgba(255,255,255,0.55),rgba(214,232,226,0.5))] backdrop-blur-[2px]" />
-      {/* кромка: толстое стекло зеленит; яркая линия — блик по краю */}
-      <div className="absolute inset-x-0 top-[7px] h-[9px] bg-[linear-gradient(to_bottom,#cfe5dd,#a9cbbf_55%,#8fb8aa)] opacity-90" />
-      <div className="absolute inset-x-0 top-[7px] h-px bg-white" />
-      <div className="absolute inset-x-[6%] top-[9px] h-[2px] bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.8),transparent)]" />
-      {/* золотые держатели */}
-      <div className="absolute top-[4px] left-[8%] h-[14px] w-[5px] rounded-[1px] bg-[linear-gradient(to_right,#8a6a35,#d7b57a,#8a6a35)]" />
-      <div className="absolute top-[4px] right-[8%] h-[14px] w-[5px] rounded-[1px] bg-[linear-gradient(to_right,#8a6a35,#d7b57a,#8a6a35)]" />
-      {/* тень и зеленоватый отсвет стекла на стене */}
-      <div className="absolute inset-x-[3%] top-[16px] h-[40px] bg-[radial-gradient(50%_100%_at_50%_0%,rgba(60,90,80,0.16),transparent)]" />
+    <div aria-hidden className="relative -mt-[9px] h-[22px]">
+      {/* верхняя плоскость: светлое стекло, к дальнему краю чуть темнее; блик бежит по диагонали */}
+      <div className="absolute inset-x-0 top-0 h-[10px] overflow-hidden rounded-t-[3px] bg-[linear-gradient(to_bottom,rgba(205,226,219,0.35),rgba(236,245,241,0.75)_70%,rgba(255,255,255,0.9))] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-[3px]">
+        <div className="absolute inset-y-0 left-[-10%] w-[45%] skew-x-[-35deg] bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.7),transparent)] opacity-70" />
+        <div className="absolute inset-y-0 left-[58%] w-[10%] skew-x-[-35deg] bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.55),transparent)] opacity-60" />
+      </div>
+      {/* передняя кромка: толстое стекло зеленит, сверху и снизу — яркие грани */}
+      <div className="absolute inset-x-0 top-[10px] h-[11px] rounded-b-[3px] bg-[linear-gradient(to_bottom,#e4f1ec_0%,#a6cdbf_22%,#7fb3a2_55%,#94c2b3_80%,#d3e9e1_100%)] shadow-[0_1px_0_rgba(255,255,255,0.6),0_2px_3px_rgba(40,70,60,0.18)]" />
+      <div className="absolute inset-x-[1px] top-[10px] h-px bg-white/95" />
+      <div className="absolute inset-x-[4%] top-[14px] h-[2px] rounded-full bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.85)_30%,rgba(255,255,255,0.4)_70%,transparent)]" />
+      <div className="absolute inset-x-[2px] top-[19px] h-px bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.75),transparent)]" />
+      {/* торцы: стекло на срезе светлее */}
+      <div className="absolute left-0 top-[2px] h-[19px] w-[3px] rounded-l-[3px] bg-[linear-gradient(to_bottom,#f2f8f6,#b9d8cd)]" />
+      <div className="absolute right-0 top-[2px] h-[19px] w-[3px] rounded-r-[3px] bg-[linear-gradient(to_bottom,#f2f8f6,#b9d8cd)]" />
+      {/* латунные держатели: зажим охватывает стекло, снизу — ножка в стену */}
+      {["left-[7%]", "right-[7%]"].map((pos) => (
+        <div key={pos} className={`absolute top-[6px] ${pos} w-[12px]`}>
+          <div className={`h-[17px] w-full rounded-[2px] ${brass} shadow-[0_2px_3px_rgba(60,40,10,0.3)]`} />
+          <div className={`mx-auto h-[10px] w-[4px] rounded-b-[2px] ${brass}`} />
+          <div className="absolute inset-x-[2px] top-[2px] h-px bg-white/70" />
+        </div>
+      ))}
+      {/* под полкой на стене: мягкая тень, зелёный отсвет стекла и полоска преломлённого света */}
+      <div className="absolute inset-x-[2%] top-[22px] h-[46px] bg-[radial-gradient(50%_100%_at_50%_0%,rgba(55,85,75,0.16),transparent)]" />
+      <div className="absolute inset-x-[10%] top-[24px] h-[22px] bg-[radial-gradient(50%_100%_at_50%_0%,rgba(120,190,165,0.22),transparent)]" />
+      <div className="absolute inset-x-[18%] top-[34px] h-px bg-[linear-gradient(to_right,transparent,rgba(255,255,255,0.9),rgba(200,240,225,0.8),transparent)] blur-[0.5px]" />
     </div>
   );
 }
