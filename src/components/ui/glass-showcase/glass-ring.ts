@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { buildBottle, HT, softboxEnv, type Bottle3DSpec } from "./bottle3d";
 import { buildPhotoBottle } from "./photo-bottle";
+import { LivingRing } from "./living-ring";
 import type { PhotoBottleData } from "@/data/photo-bottles";
 
 /** флакон витрины: стеклянный 3D (Bottle3DSpec) или фото-флакон с листа снимков */
@@ -14,13 +15,17 @@ type RingBottle = {
 };
 const widthOf = (s: RingSpec) =>
   "photo" in s ? ((Math.max(...s.photo.rows.map((r) => r[1])) * 2) / s.photo.size[1]) * HT : s.shape.aspect * HT;
+/** половина глубины флакона (от ряда кольца к воде по радиусу) */
+const depthOf = (s: RingSpec) =>
+  "photo" in s ? (Math.max(...s.photo.rows.map((r) => r[2])) / s.photo.size[1]) * HT : (s.shape.aspect * HT * (s.shape.body.depth ?? 0.6)) / 2;
 
 /**
  * Круглая витрина на фотореалистичных стеклянных флаконах (Three.js).
- * Флаконы стоят по кругу на стеклянном столе лицом наружу; кольцо крутят пальцем/мышью с инерцией.
+ * Флаконы стоят по кругу в «живом» кольце воды (см. living-ring.ts) лицом наружу; кольцо крутят пальцем/мышью с инерцией.
  * Когда кольцо разгоняется, флаконы чуть кренятся и жидкость в них раскачивается, потом успокаивается.
  * Выбор флакона — кольцо доворачивает его к зрителю, камера подъезжает.
- * Рисуется только пока что-то движется; в покое — ни одного кадра. Не чаще 60 кадров в секунду.
+ * Пока кольцо трогают — до 60 кадров в секунду; в покое вода живёт в ~30 кадрах (на телефоне ~24);
+ * вне экрана и на скрытой вкладке — ни одного кадра. При «уменьшить движение» в покое кадров нет.
  * Тот же интерфейс, что у PerfumeRing: select, turn, dispose + события.
  */
 
@@ -32,7 +37,6 @@ export type GlassRingEvents = {
 };
 
 const BG = new THREE.Color("#f5f1ea");
-const GOLD = new THREE.Color("#c9a463");
 const FOV = 30;
 
 export class GlassRing {
@@ -51,6 +55,19 @@ export class GlassRing {
   /** масштаб флаконов на кольце: при многих флаконах — меньше, чтобы им было просторно */
   private S: number;
   private extra: { dispose(): void }[] = [];
+  private living: LivingRing;
+  /** вода живёт и в покое (нет «уменьшить движение») */
+  private alive: boolean;
+  private touch: boolean;
+  private calm = false;
+  private wakeT = 0;
+  private wakeI = 0;
+  private dropT = 2;
+  private spinT = 0;
+  private dropAt = -1;
+  private hoverI: number | null = null;
+  private stirAt: { x: number; z: number; t: number } | null = null;
+  private hitP = new THREE.Vector3();
 
   private ring = 0;
   private vel = 0;
@@ -86,7 +103,8 @@ export class GlassRing {
     this.slots = Math.max(3, this.n);
     this.S = this.n > 3 ? 0.68 : 1;
     this.step = (Math.PI * 2) / this.slots;
-    const touch = window.matchMedia("(pointer: coarse)").matches;
+    const touch = (this.touch = window.matchMedia("(pointer: coarse)").matches);
+    this.alive = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !touch, alpha: true, powerPreference: "high-performance" }));
     r.setClearColor(0x000000, 0); // прозрачный — за витриной виден фон страницы (сетка)
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.5 : 1.75));
@@ -108,7 +126,10 @@ export class GlassRing {
     // мало флаконов — просторно; много — по средней ширине, чтобы кольцо не разрасталось из-за самых широких
     const gap = this.n <= 3 ? maxW * 1.6 : avgW * 1.3;
     this.R = Math.max(maxW * 1.05, gap / (2 * Math.sin(this.step / 2)));
-    this.buildTable();
+    // канал воды: флаконы стоят посередине, по бокам — место для лепестков
+    const dh = Math.max(...specs.map(depthOf)) * this.S;
+    this.living = new LivingRing({ R: this.R, half: dh + Math.max(0.75, HT * this.S * 0.22), dh, touch, env: this.env });
+    this.scene.add(this.living.group);
 
     const loader = new THREE.TextureLoader();
     let pending = specs.reduce((n, s) => n + ("photo" in s ? 2 : (s.label ? 1 : 0) + (s.photoCap ? 1 : 0)), 0);
@@ -132,6 +153,7 @@ export class GlassRing {
         g.scale.setScalar(this.S);
         [...pb.scene.children].forEach((c) => g.add(c));
         this.scene.add(g);
+        this.living.mirror(g);
         this.bottles.push({ b: pb, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0 });
         return;
       }
@@ -157,6 +179,7 @@ export class GlassRing {
       g.scale.setScalar(this.S);
       [...b.scene.children].forEach((c) => g.add(c));
       this.scene.add(g);
+      this.living.mirror(g);
       this.bottles.push({ b, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0 });
     });
 
@@ -178,50 +201,12 @@ export class GlassRing {
     this.resize();
   }
 
-  /** Стеклянный стол: тонкая прозрачная плита с зеленоватой кромкой, золотой обод и опора */
-  private buildTable() {
-    const R = this.R + HT * 0.4;
-    const k = <T extends { dispose(): void }>(x: T) => (this.extra.push(x), x);
-    const top = new THREE.Mesh(
-      k(new THREE.CylinderGeometry(R, R, 0.16, 160, 1)),
-      [
-        k(new THREE.MeshPhysicalMaterial({ color: "#cfe3dc", roughness: 0.05, transmission: 1, thickness: 0.4, ior: 1.5, attenuationColor: new THREE.Color("#bcd8cd"), attenuationDistance: 0.8 })),
-        k(new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.03, transmission: 1, thickness: 0.16, ior: 1.5, attenuationColor: new THREE.Color("#e6f0ec"), attenuationDistance: 4, envMapIntensity: 0.8 })),
-        k(new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.03, transmission: 1, thickness: 0.16, ior: 1.5 })),
-      ],
-    );
-    top.position.y = -0.08;
-    this.scene.add(top);
-    const gold = k(new THREE.MeshStandardMaterial({ color: GOLD, metalness: 1, roughness: 0.3 }));
-    const rim = new THREE.Mesh(k(new THREE.TorusGeometry(R * 0.97, 0.025, 12, 200)), gold);
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = -0.17;
-    this.scene.add(rim);
-    const stem = new THREE.Mesh(k(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 48, 1, true)), gold);
-    stem.position.y = -0.78;
-    this.scene.add(stem);
-    // тень стола на «полу»
-    const c = document.createElement("canvas");
-    c.width = c.height = 256;
-    const g = c.getContext("2d")!;
-    const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-    gr.addColorStop(0, "rgba(60,50,40,0.22)");
-    gr.addColorStop(1, "rgba(60,50,40,0)");
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 256, 256);
-    const t = k(new THREE.CanvasTexture(c));
-    t.colorSpace = THREE.SRGBColorSpace;
-    const floor = new THREE.Mesh(k(new THREE.PlaneGeometry(R * 2.6, R * 2.6)), k(new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false })));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -1.4;
-    this.scene.add(floor);
-  }
-
   private resize() {
     const w = this.host.clientWidth;
     const h = this.host.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
+    this.living.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
     const aspect = w / h;
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
@@ -267,6 +252,8 @@ export class GlassRing {
     } else {
       const want = -i * this.step;
       this.target = want + Math.PI * 2 * Math.round((this.ring - want) / (Math.PI * 2));
+      // флакон доехал вперёд — от него по воде расходится круг
+      this.dropAt = this.living.time + 0.75;
     }
     this.loop();
   }
@@ -314,6 +301,12 @@ export class GlassRing {
     this.startX = this.prevX = e.clientX;
     this.prevT = performance.now();
     this.vel = 0;
+    // касание воды мимо флаконов — круг
+    if (this.pick(e) === null) {
+      const w = this.living.hit(this.ray.ray, this.hitP);
+      if (w) this.living.ripple(w.x, w.z, 0.9);
+    }
+    this.loop();
   };
 
   private onMove = (e: PointerEvent) => {
@@ -350,6 +343,25 @@ export class GlassRing {
     const i = this.pick(e);
     const r = this.renderer.domElement.getBoundingClientRect();
     this.hover = i === null ? null : { i, px: ((e.clientX - r.left) / r.width - 0.5) * 2, py: ((e.clientY - r.top) / r.height - 0.5) * 2 };
+    // навели на новый флакон — у его основания дрогнула вода
+    if (i !== null && i !== this.hoverI && this.sel === null) {
+      const p = this.bottles[i].g.position;
+      this.living.ripple(p.x, p.z, 0.45);
+    }
+    this.hoverI = i;
+    // мышь скользит над водой — за ней круги, лепестки отплывают
+    const w = i === null ? this.living.hit(this.ray.ray, this.hitP) : null;
+    if (w) {
+      const t = this.living.time;
+      const s = this.stirAt;
+      const d = s ? Math.hypot(w.x - s.x, w.z - s.z) : 1;
+      if (d > 0.32 || (s && t - s.t > 0.4 && d > 0.05)) {
+        const dt = s ? Math.max(0.03, t - s.t) : 1;
+        if (s) this.living.push(w.x, w.z, (w.x - s.x) / dt, (w.z - s.z) / dt);
+        this.living.ripple(w.x, w.z, Math.min(0.7, 0.25 + d * 0.5));
+        this.stirAt = { x: w.x, z: w.z, t };
+      }
+    } else this.stirAt = null;
     this.renderer.domElement.style.cursor = i !== null && i === this.sel ? "grab" : i !== null ? "pointer" : "grab";
     this.loop();
   };
@@ -396,6 +408,8 @@ export class GlassRing {
 
   private onLeave = () => {
     this.hover = null;
+    this.hoverI = null;
+    this.stirAt = null;
     this.loop();
   };
 
@@ -406,7 +420,9 @@ export class GlassRing {
     const tick = (t: number) => {
       this.raf = 0;
       if (!this.visible || this.disposed) return;
-      if (this.last && t - this.lastDraw < 15.5) {
+      // в покое вода живёт реже: ~30 кадров (телефон ~24)
+      const gap = this.calm ? (this.touch ? 40 : 32) : 15.5;
+      if (this.last && t - this.lastDraw < gap) {
         this.raf = requestAnimationFrame(tick);
         return;
       }
@@ -414,7 +430,8 @@ export class GlassRing {
       this.last = t;
       this.lastDraw = t;
       const busy = this.frame(dt);
-      if (busy) this.raf = requestAnimationFrame(tick);
+      this.calm = !busy;
+      if (busy || this.alive) this.raf = requestAnimationFrame(tick);
       else this.last = 0;
     };
     this.raf = requestAnimationFrame(tick);
@@ -506,6 +523,47 @@ export class GlassRing {
       x.box.setFromObject(x.g.children[0]);
     });
 
+    // вода: круги от вращения кольца, от открытого флакона, когда его крутят, и редкие «капли» в покое
+    const lv = this.living;
+    if (Math.abs(angVel) > 0.15) {
+      this.wakeT += dt;
+      if (this.wakeT > 0.09) {
+        this.wakeT = 0;
+        // по очереди от флаконов передней половины кольца
+        for (let k = 0; k < this.n; k++) {
+          this.wakeI = (this.wakeI + 7) % this.n;
+          const p = this.bottles[this.wakeI].g.position;
+          if (p.z > -this.R * 0.25) {
+            lv.ripple(p.x, p.z, Math.min(0.9, Math.abs(angVel) * 0.45));
+            break;
+          }
+        }
+      }
+    }
+    if (this.sel !== null) {
+      const x = this.bottles[this.sel];
+      if (this.dropAt > 0 && lv.time >= this.dropAt) {
+        this.dropAt = -1;
+        lv.ripple(x.g.position.x, x.g.position.z, 1.3);
+      }
+      this.spinT += dt;
+      if (Math.abs(x.spinV) > 0.8 && this.spinT > 0.2) {
+        this.spinT = 0;
+        lv.ripple(x.g.position.x, x.g.position.z, Math.min(0.7, Math.abs(x.spinV) * 0.12));
+      }
+    } else this.dropAt = -1;
+    if (this.alive) {
+      this.dropT -= dt;
+      if (this.dropT <= 0) {
+        this.dropT = 2.2 + Math.random() * 3.5;
+        const a = (Math.random() - 0.5) * 2.4; // в передней части, где видно
+        const r = lv.ri + (lv.ro - lv.ri) * (Math.random() < 0.5 ? 0.15 + Math.random() * 0.15 : 0.7 + Math.random() * 0.15);
+        lv.ripple(Math.sin(a) * r, Math.cos(a) * r, 0.3 + Math.random() * 0.3);
+      }
+    }
+    lv.update(dt, angVel);
+    lv.renderReflection(this.renderer, this.camera);
+
     this.renderer.render(this.scene, this.camera);
     return moving;
   }
@@ -522,6 +580,7 @@ export class GlassRing {
     cv.removeEventListener("pointercancel", this.onCancel);
     cv.removeEventListener("pointerleave", this.onLeave);
     this.bottles.forEach((x) => x.b.dispose());
+    this.living.dispose();
     this.extra.forEach((x) => x.dispose());
     this.env.dispose();
     this.renderer.dispose();
