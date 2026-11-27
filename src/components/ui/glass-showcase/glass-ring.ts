@@ -232,7 +232,16 @@ export class GlassRing {
       this.base.pos.set(0, dist * 0.42, dist);
       this.base.look.set(0, HT * 0.35, 0);
     } else {
-      const dist = Math.max(span / (t * aspect) + this.R * 0.5, (HT * 1.35) / t);
+      let dist = Math.max(span / (t * aspect) + this.R * 0.5, (HT * 1.35) / t);
+      // широкий экран: отодвигаем камеру, пока передний флакон не окажется выше подписи внизу
+      const front = new THREE.Vector3();
+      for (let k = 0; k < 40; k++) {
+        this.camera.position.set(0, HT * 0.5 + dist * 0.22, dist);
+        this.camera.lookAt(0, HT * 0.3, 0);
+        this.camera.updateMatrixWorld();
+        if (front.set(0, 0, this.R + HT * 0.1).project(this.camera).y >= -0.5) break;
+        dist *= 1.04;
+      }
       this.base.pos.set(0, HT * 0.5 + dist * 0.22, dist);
       this.base.look.set(0, HT * 0.3, 0);
     }

@@ -4,14 +4,16 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 /**
- * Бегущая сетка на шейдере — фон витрины: белый фон, чёрные линии.
- * Чтобы не лагало: разрешение 1×, не чаще 30 кадров в секунду, пауза, когда фон не виден или вкладка скрыта;
- * при «уменьшить движение» — один неподвижный кадр.
+ * Сетка на шейдере — фон витрины: белый фон, чёрные линии. Стоит на месте и едва просвечивает,
+ * а вокруг курсора проявляется ярче — пятно плавно следует за мышью и гаснет, когда мышь замирает.
+ * Рисуется только когда что-то меняется (движение мыши, размер окна) — в покое ноль кадров.
  */
 type Props = {
   className?: string;
-  /** скорость прокрутки (1 — как в оригинале) */
-  speed?: number;
+  /** насколько видна сетка в покое (0…1) */
+  base?: number;
+  /** радиус пятна у курсора, px */
+  radius?: number;
 };
 
 const vertexShader = /* glsl */ `
@@ -22,17 +24,22 @@ void main() {
 const fragmentShader = /* glsl */ `
 precision highp float;
 uniform vec2 resolution;
-uniform float time;
+uniform vec2 mouse;
+uniform float spot;
+uniform float radius;
+uniform float base;
 void main(void) {
   vec2 uv = (gl_FragCoord.xy - 0.5 * resolution) / min(resolution.x, resolution.y);
-  uv.x += time * 0.1;
+  uv.x += 0.1;
   float s = 12.0, e = 9e-4;
   // яркость линий из оригинала, перевёрнутая: белый фон, чёрные линии
   float line = clamp(e / (sin(uv.x * s) * cos(uv.y * s)), 0.0, 1.0);
-  gl_FragColor = vec4(vec3(1.0 - line), 1.0);
+  float d = distance(gl_FragCoord.xy, mouse);
+  float k = mix(base, 1.0, spot * exp(-(d * d) / (radius * radius)));
+  gl_FragColor = vec4(vec3(1.0 - line * k), 1.0);
 }`;
 
-export function ScrollingGridShader({ className = "", speed = 1 }: Props) {
+export function ScrollingGridShader({ className = "", base = 0.22, radius = 280 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,62 +54,69 @@ export function ScrollingGridShader({ className = "", speed = 1 }: Props) {
     const scene = new THREE.Scene();
     const camera = new THREE.Camera();
     const geometry = new THREE.PlaneGeometry(2, 2);
-    const uniforms = { time: { value: 1 }, resolution: { value: new THREE.Vector2() } };
+    const uniforms = {
+      resolution: { value: new THREE.Vector2() },
+      mouse: { value: new THREE.Vector2(-9999, -9999) },
+      spot: { value: 0 },
+      radius: { value: radius },
+      base: { value: base },
+    };
     const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader });
     scene.add(new THREE.Mesh(geometry, material));
+    const draw = () => renderer.render(scene, camera);
 
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // пятно у курсора: догоняет мышь и гаснет через секунду после остановки
+    const target = new THREE.Vector2(-9999, -9999);
+    let lastMove = 0;
     let raf = 0;
-    let last = 0;
-    let shown = true;
-    const t0 = performance.now();
-
-    const draw = (now: number) => {
-      uniforms.time.value = 1 + ((now - t0) / 1000) * 0.6 * speed;
-      renderer.render(scene, camera);
-    };
-    const loop = (now: number) => {
+    let prev = 0;
+    const tick = (now: number) => {
       raf = 0;
-      if (!shown || document.hidden) return;
-      if (now - last >= 33) {
-        last = now;
-        draw(now);
-      }
-      raf = requestAnimationFrame(loop);
+      const dt = Math.min(0.05, (now - (prev || now)) / 1000);
+      prev = now;
+      const m = uniforms.mouse.value;
+      if (m.x < -9000) m.copy(target);
+      else m.lerp(target, 1 - Math.exp(-dt * 14));
+      const want = now - lastMove < 900 ? 1 : 0;
+      uniforms.spot.value += (want - uniforms.spot.value) * (1 - Math.exp(-dt * (want ? 6 : 2.2)));
+      draw();
+      const settled = !want && uniforms.spot.value < 0.003 && m.distanceTo(target) < 0.5;
+      if (settled) {
+        uniforms.spot.value = 0;
+        draw();
+        prev = 0;
+      } else raf = requestAnimationFrame(tick);
     };
-    const start = () => {
-      if (still) draw(performance.now());
-      else if (!raf) raf = requestAnimationFrame(loop);
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      const r = el.getBoundingClientRect();
+      if (e.clientY < r.top || e.clientY > r.bottom) return;
+      target.set(e.clientX - r.left, r.bottom - e.clientY); // в координатах шейдера ось Y снизу вверх
+      lastMove = performance.now();
+      if (!raf) raf = requestAnimationFrame(tick);
     };
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduce) window.addEventListener("pointermove", onMove, { passive: true });
 
     const resize = () => {
       renderer.setSize(el.clientWidth, el.clientHeight, false);
       uniforms.resolution.value.set(renderer.domElement.width, renderer.domElement.height);
-      draw(performance.now());
+      draw();
     };
     const ro = new ResizeObserver(resize);
     ro.observe(el);
-    const io = new IntersectionObserver(([e]) => {
-      shown = e.isIntersecting;
-      if (shown) start();
-    });
-    io.observe(el);
-    const vis = () => !document.hidden && start();
-    document.addEventListener("visibilitychange", vis);
     resize();
-    start();
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
-      io.disconnect();
-      document.removeEventListener("visibilitychange", vis);
+      window.removeEventListener("pointermove", onMove);
       el.removeChild(renderer.domElement);
       renderer.dispose();
       geometry.dispose();
       material.dispose();
     };
-  }, [speed]);
+  }, [base, radius]);
 
   return <div ref={ref} aria-hidden className={`relative overflow-hidden bg-white ${className}`} />;
 }
