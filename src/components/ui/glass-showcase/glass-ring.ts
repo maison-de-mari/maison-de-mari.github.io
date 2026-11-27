@@ -276,10 +276,30 @@ export class GlassRing {
     }
     // крупный план: флакон слева от карточки (компьютер) или над ней (телефон)
     const bh = HT * this.S; // высота флакона на кольце
-    const nd = this.portrait ? bh * 3.4 : bh * 2.3;
-    const shift = this.portrait ? 0 : bh * 0.32;
-    this.near.pos.set(shift, bh * 0.6, this.R + nd);
-    this.near.look.set(shift, this.portrait ? bh * 0.2 : bh * 0.46, this.R);
+    if (this.portrait) {
+      // телефон: карточка занимает нижнюю половину экрана — флакон целиком в верхней части,
+      // между шапкой (верх ≈ +0.74) и карточкой (низ флакона ≈ +0.08)
+      let nd = bh * 5;
+      let ly = bh * 0.2;
+      const top = new THREE.Vector3();
+      const foot = new THREE.Vector3();
+      for (let k = 0; k < 8; k++) {
+        this.camera.position.set(0, bh * 0.55, this.R + nd);
+        this.camera.lookAt(0, ly, this.R);
+        this.camera.updateMatrixWorld();
+        const yt = top.set(0, bh * 1.02, this.R).project(this.camera).y;
+        const yb = foot.set(0, 0, this.R).project(this.camera).y;
+        nd *= (yt - yb) / 0.66;
+        ly += ((yt + yb) / 2 - 0.41) * nd * t;
+      }
+      this.near.pos.set(0, bh * 0.55, this.R + nd);
+      this.near.look.set(0, ly, this.R);
+    } else {
+      const nd = bh * 2.3;
+      const shift = bh * 0.32;
+      this.near.pos.set(shift, bh * 0.6, this.R + nd);
+      this.near.look.set(shift, bh * 0.46, this.R);
+    }
     this.force = true;
     this.loop();
   }
