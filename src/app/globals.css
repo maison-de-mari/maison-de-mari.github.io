@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-/* Maison De Mari — светлая тема: тёплый белый фон, белый мрамор и золото; один шрифт Jost (рукописный — только логотип).
+/* Maison De Mari — светлая тема: тёплый белый фон, белый мрамор и золото; Jost — подписи и текст, Cormorant — заголовки
+   (тонкий с засечками), рукописный — только логотип.
    Имена токенов прежние: night — фон, ink — текст. Тёмный вариант — в ветке variant-dark. */
 @theme {
   --color-night: #f7f4ef;
@@ -9,6 +10,7 @@
   --color-gold: #9a7438;
   --font-sans: var(--font-jost), "Helvetica Neue", Arial, system-ui, sans-serif;
   --font-script: var(--font-pinyon), cursive;
+  --font-serif: var(--font-cormorant), "Times New Roman", serif;
 }
 
 :root {

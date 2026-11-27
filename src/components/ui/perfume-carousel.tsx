@@ -8,6 +8,7 @@ import { cart, sum, useCart } from "@/lib/cart";
 import { Scent } from "@/components/scent";
 import { PerfumeRing } from "./perfume-ring/scene";
 import { GlassRing, type RingSpec } from "./glass-showcase/glass-ring";
+import { RevealText } from "./reveal-text";
 import { quality, useQuality } from "@/lib/quality";
 import type { SolidSpec } from "./perfume-ring/solid-bottle";
 
@@ -188,8 +189,8 @@ export function PerfumeCarousel({
         transition={{ duration: 0.4, ease: EASE }}
         className={`pointer-events-none absolute inset-x-0 z-10 px-4 text-center sm:top-24 ${children ? "top-[7.25rem]" : "top-[4.75rem]"}`}
       >
-        <p className="text-[11px] font-medium uppercase tracking-[0.32em] text-soft">Парфюмерный бутик · Ташкент</p>
-        <h1 className="mt-3 text-[clamp(1.6rem,4vw,3rem)] font-light uppercase leading-none tracking-[0.18em]">Витрина ароматов</h1>
+        <RevealText as="p" text="Парфюмерный бутик · Ташкент" className="text-[11px] font-medium uppercase tracking-[0.32em] text-soft" stagger={0.08} />
+        <RevealText as="h1" text="Витрина ароматов" className="mt-3 font-serif text-[clamp(2.2rem,5.4vw,4.2rem)] font-light leading-none" delay={0.35} stagger={0.22} />
       </motion.div>
 
       {/* аромат напротив зрителя */}
@@ -220,9 +221,12 @@ export function PerfumeCarousel({
                 <span className="block truncate text-[11px] font-medium uppercase tracking-[0.3em] text-gold">
                   {num(front)} · {f.brand}
                 </span>
-                <span className="mt-1.5 block truncate text-[clamp(1.25rem,2.6vw,1.75rem)] font-light uppercase tracking-[0.12em] transition-colors group-hover:text-gold">
-                  {f.name}
-                </span>
+                <RevealText
+                  text={f.name}
+                  inView={false}
+                  stagger={0.07}
+                  className="mt-1 block truncate font-serif text-[clamp(1.6rem,3vw,2.2rem)] font-light leading-tight transition-colors group-hover:text-gold"
+                />
                 <span className="mt-1 block text-sm text-soft">{priceFrom(f)}</span>
               </motion.span>
             </AnimatePresence>
@@ -346,9 +350,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
           <motion.p variants={rise} className="mt-4 text-xs font-medium uppercase tracking-[0.3em] text-gold">
             {a.brand}
           </motion.p>
-          <motion.h2 variants={rise} className="mt-1.5 text-[clamp(1.75rem,3.2vw,2.6rem)] font-light uppercase leading-[1.05] tracking-[0.08em]">
-            {a.name}
-          </motion.h2>
+          <RevealText as="h2" text={a.name} inView={false} delay={0.25} stagger={0.1} className="mt-1.5 font-serif text-[clamp(2.1rem,3.8vw,3.1rem)] font-light leading-[1.02]" />
           <motion.p variants={rise} className="order-5 mt-3 text-[15px] leading-relaxed text-ink/85 lg:order-none">
             {a.description.ru}
           </motion.p>

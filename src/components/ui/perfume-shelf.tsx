@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { RevealText } from "./reveal-text";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useReducedMotion, useTransform, type MotionValue } from "framer-motion";
 import { ChevronDown, ChevronLeft, Minus, Plus } from "lucide-react";
 import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
@@ -97,9 +98,9 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
       <LayoutGroup>
         <div className="mx-auto w-full max-w-[1100px] px-4 pt-20 pb-16 sm:px-6">
           <header className="mb-14 text-center">
-            <p className="text-[11px] font-medium uppercase tracking-[0.32em] text-soft">Все ароматы бутика</p>
-            <h2 id="shelf-title" className="mt-3 text-[clamp(1.6rem,4vw,2.6rem)] font-light uppercase leading-none tracking-[0.18em]">
-              Витрина
+            <RevealText as="p" text="Все ароматы бутика" className="text-[11px] font-medium uppercase tracking-[0.32em] text-soft" stagger={0.1} />
+            <h2 id="shelf-title" className="mt-3 font-serif text-[clamp(2.4rem,5vw,3.8rem)] font-light leading-none">
+              <RevealText text="Витрина" delay={0.3} />
             </h2>
           </header>
 
@@ -109,8 +110,8 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
             return (
               <div key={mood} className="mb-6">
                 <h3 className="mb-6 flex items-center gap-4 text-[11px] font-medium uppercase tracking-[0.3em] text-gold">
-                  {MOOD_TITLE[mood]}
-                  <span aria-hidden className="h-px flex-1 bg-gold/25" />
+                  <RevealText text={MOOD_TITLE[mood]} stagger={0.1} />
+                  <span aria-hidden className="h-px flex-1 bg-gold/40" />
                 </h3>
                 {chunk(list, 4).map((row, r) => (
                   <div key={r} className="relative mb-14">
@@ -149,7 +150,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                       {row.map((a) => (
                         <div key={a.slug} className="min-w-0 text-center">
                           <div className="truncate text-[10px] font-medium uppercase tracking-[0.2em] text-gold sm:text-[11px]">{a.brand}</div>
-                          <div className="mt-1 truncate text-[13px] leading-tight sm:text-[15px]">{a.name}</div>
+                          <div className="mt-1 truncate font-serif text-[16px] leading-tight sm:text-[19px]">{a.name}</div>
                           <div className="mt-0.5 text-[12px] text-soft tabular-nums sm:text-[13px]">{priceFrom(a)}</div>
                         </div>
                       ))}
@@ -300,7 +301,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
             <ChevronLeft className="size-4" strokeWidth={1.8} /> К витрине
           </button>
           <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-gold">{a.brand}</p>
-          <h2 className="mt-2 text-[clamp(1.9rem,4vw,2.8rem)] font-light uppercase leading-[1.05] tracking-[0.08em]">{a.name}</h2>
+          <RevealText as="h2" text={a.name} inView={false} delay={0.2} stagger={0.1} className="mt-2 font-serif text-[clamp(2.2rem,4.4vw,3.2rem)] font-light leading-[1.02]" />
           {d && <p className="mt-2 text-sm text-soft">{d.family.ru}</p>}
           <p className="mt-4 max-w-[54ch] text-[16px] leading-relaxed text-ink/85">{a.description.ru}</p>
 

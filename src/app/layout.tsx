@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Jost, Pinyon_Script } from "next/font/google";
+import { Cormorant_Garamond, Jost, Pinyon_Script } from "next/font/google";
 import "./globals.css";
 
 const jost = Jost({ subsets: ["latin", "cyrillic"], variable: "--font-jost", display: "swap" });
+const serif = Cormorant_Garamond({ subsets: ["latin", "cyrillic"], weight: ["300", "400"], variable: "--font-cormorant", display: "swap" });
 const script = Pinyon_Script({ subsets: ["latin"], weight: "400", variable: "--font-pinyon", display: "swap" });
 
 export const metadata: Metadata = {
@@ -18,7 +19,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${jost.variable} ${script.variable}`}>
+    <html lang="ru" className={`${jost.variable} ${serif.variable} ${script.variable}`}>
       <body>{children}</body>
     </html>
   );

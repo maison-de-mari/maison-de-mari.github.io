@@ -1,6 +1,6 @@
 import { PerfumeCarousel } from "@/components/ui/perfume-carousel";
 import { PerfumeShelf } from "@/components/ui/perfume-shelf";
-import { ScrollingGridShader } from "@/components/ui/grid-shader";
+import { ReliefPaper } from "@/components/ui/relief-paper";
 import { Snow } from "@/components/ui/snow";
 import type { RingSpec } from "@/components/ui/glass-showcase/glass-ring";
 import { getAroma, type AromaWithImages } from "@/data/aromas";
@@ -22,8 +22,8 @@ const ringItems = ring.map((s) => getAroma(slugOf(s))).filter((a): a is AromaWit
 export default function Home() {
   return (
     <main>
-      {/* фон всего сайта — сетка: стоит на месте, страница прокручивается поверх */}
-      <ScrollingGridShader className="fixed! inset-0 -z-10" />
+      {/* фон всего сайта — бумага с гипсовым рельефом: проступает под курсором */}
+      <ReliefPaper className="fixed inset-0 -z-10" />
       <PerfumeCarousel items={ringItems} glass={ring} />
       <PerfumeShelf />
       <Snow />
