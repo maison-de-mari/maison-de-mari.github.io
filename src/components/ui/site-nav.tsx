@@ -16,11 +16,13 @@ const MOOD_TITLE: Record<Mood, string> = {
 
 type Where = "ring" | "shelf" | Mood;
 
+const RAIL: { id: "ring" | Mood; label: string }[] = [{ id: "ring", label: "Витрина" }, ...MOODS.map((m) => ({ id: m, label: MOOD_TITLE[m] }))];
+
 /**
  * Меню сайта — закреплено и едет вместе со страницей.
- * Компьютер: слева логотип, справа — окно-меню, пункты сверху вниз:
- *   Витрина (3D-кольцо) → Все ароматы → полки по настроениям → Корзина.
- * Телефон и узкий ноутбук (< 1280 px): те же разделы строкой кнопок («Витрина», «Ароматы», корзина).
+ * Компьютер (≥ 1024 px): слева логотип, справа — узкая линейка: корзина, под ней разделы сверху вниз точками
+ *   (Витрина, затем полки по настроениям); подписи — при наведении и коротко при смене раздела.
+ * Телефон и планшет: те же разделы строкой кнопок («Витрина», «Ароматы», корзина).
  * Раздел, где сейчас посетитель, подсвечен золотом.
  */
 export function SiteNav() {
@@ -58,6 +60,20 @@ export function SiteNav() {
   };
 
   const inShelf = where !== "ring";
+  // в начале полок (до первого настроения) отмечаем первую полку
+  const mark: "ring" | Mood = where === "shelf" ? MOODS[0] : where;
+  // при смене раздела его название коротко показывается рядом с линейкой
+  const [flash, setFlash] = useState<"ring" | Mood | null>(null);
+  const [seen, setSeen] = useState(mark);
+  if (seen !== mark) {
+    setSeen(mark);
+    setFlash(mark);
+  }
+  useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [flash]);
 
   return (
     <nav aria-label="Разделы сайта" className="pointer-events-none fixed inset-x-0 top-0 z-40">
@@ -75,8 +91,8 @@ export function SiteNav() {
           Maison De Mari
         </a>
 
-        {/* телефон и узкий ноутбук: строка кнопок */}
-        <div className="pointer-events-auto flex items-center gap-1 sm:gap-2 xl:hidden">
+        {/* телефон и планшет: строка кнопок */}
+        <div className="pointer-events-auto flex items-center gap-1 sm:gap-2 lg:hidden">
           <Pill active={!inShelf} onClick={() => go("top")}>
             Витрина
           </Pill>
@@ -86,57 +102,49 @@ export function SiteNav() {
           <CartPill />
         </div>
 
-        {/* широкий экран: окно-меню, пункты сверху вниз (на узком оно закрывало бы правый ряд флаконов) */}
+        {/* компьютер: узкая линейка у правого края — корзина и разделы сверху вниз точками */}
         <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, x: 8 }}
+          animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-auto hidden w-[12.5rem] rounded-2xl bg-white/75 p-1.5 shadow-[0_20px_44px_-22px_rgba(70,45,20,0.45)] ring-1 ring-ink/10 backdrop-blur-md xl:block"
+          className="pointer-events-auto hidden flex-col items-center gap-3 lg:flex"
         >
-          <Row active={where === "ring"} onClick={() => go("top")}>
-            Витрина
-          </Row>
-          <Row active={where === "shelf"} onClick={() => go("shelf")}>
-            Все ароматы
-          </Row>
-          <ul className="mb-1 ml-4 border-l border-gold/30 pl-1">
-            {MOODS.map((m) => (
-              <li key={m}>
-                <button
-                  type="button"
-                  onClick={() => go(m)}
-                  aria-current={where === m ? "true" : undefined}
-                  className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left font-serif text-[15px] leading-none transition-colors duration-300 ${
-                    where === m ? "text-gold" : "text-ink/75 hover:text-gold"
-                  }`}
-                >
-                  <span aria-hidden className={`size-1 rounded-full transition-colors ${where === m ? "bg-gold" : "bg-transparent"}`} />
-                  {MOOD_TITLE[m]}
-                </button>
+          <CartButton />
+          <ul className="flex flex-col items-center gap-0.5 rounded-full bg-white/75 px-1 py-2 shadow-[0_14px_30px_-18px_rgba(70,45,20,0.45)] ring-1 ring-ink/10 backdrop-blur-md">
+            {RAIL.map((it, i) => (
+              <li key={it.id} className={i === 1 ? "mt-1.5 border-t border-ink/10 pt-1.5" : ""}>
+                <RailDot label={it.label} active={mark === it.id} flash={flash === it.id} onClick={() => go(it.id === "ring" ? "top" : it.id)} />
               </li>
             ))}
           </ul>
-          <div aria-hidden className="mx-3 h-px bg-ink/10" />
-          <CartRow />
         </motion.div>
       </div>
     </nav>
   );
 }
 
-/** пункт окна-меню: золотая точка и золотой текст у текущего раздела */
-function Row({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+/** точка линейки: у текущего раздела вытягивается в золотую черту; подпись — слева при наведении или при смене раздела */
+function RailDot({ label, active, flash, onClick }: { label: string; active: boolean; flash: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-label={label}
       aria-current={active ? "true" : undefined}
-      className={`flex h-10 w-full items-center justify-between rounded-xl px-3.5 text-[11px] font-medium uppercase tracking-[0.22em] transition-colors duration-300 ${
-        active ? "bg-gold/10 text-gold" : "text-ink hover:bg-ink/[0.04] hover:text-gold"
-      }`}
+      className="group relative grid h-7 w-7 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-gold"
     >
-      {children}
-      <span aria-hidden className={`size-1.5 rounded-full transition-colors ${active ? "bg-gold" : "bg-transparent"}`} />
+      {active ? (
+        <motion.span layoutId="rail-mark" transition={{ type: "spring", bounce: 0.25, duration: 0.5 }} className="h-4 w-1.5 rounded-full bg-gold" />
+      ) : (
+        <span className="size-1.5 rounded-full bg-ink/25 transition-colors duration-300 group-hover:bg-gold" />
+      )}
+      <span
+        className={`pointer-events-none absolute right-full mr-2 whitespace-nowrap rounded-full bg-white/90 px-3 py-1 font-serif text-[15px] leading-none shadow-sm ring-1 ring-ink/10 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100 ${
+          flash ? "translate-x-0 opacity-100" : "translate-x-1 opacity-0"
+        } ${active ? "text-gold" : "text-ink"}`}
+      >
+        {label}
+      </span>
     </button>
   );
 }
@@ -175,21 +183,27 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function CartRow() {
+/** корзина на линейке: круглая кнопка с сумкой, число — золотым кружком на уголке */
+function CartButton() {
   const n = useCart().length;
   return (
-    <motion.div
+    <motion.span
       key={n}
       initial={false}
-      animate={n ? { y: [0, -3, 1, 0] } : undefined}
+      animate={n ? { y: [0, -4, 1, 0] } : undefined}
       transition={{ duration: 0.6, ease: [0.3, 1.6, 0.5, 1] }}
       aria-live="polite"
       aria-label={`Корзина: ${n}`}
-      className="mt-1 flex h-11 items-center justify-between rounded-xl pl-3.5 pr-1.5 text-[11px] font-medium uppercase tracking-[0.22em]"
+      className="relative grid size-11 place-items-center rounded-full bg-white/85 shadow-[0_14px_30px_-18px_rgba(70,45,20,0.45)] ring-1 ring-ink/15 backdrop-blur-md"
     >
-      Корзина
-      <Count n={n} />
-    </motion.div>
+      <svg aria-hidden viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 8h12l-1 12H7L6 8Z" />
+        <path d="M9 8V6.5a3 3 0 0 1 6 0V8" />
+      </svg>
+      <span className="absolute -right-1.5 -top-1.5 scale-[0.8]">
+        <Count n={n} />
+      </span>
+    </motion.span>
   );
 }
 
