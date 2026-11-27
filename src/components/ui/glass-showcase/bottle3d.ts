@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { buildPhotoCap, type PhotoCap } from "./photo-cap";
+import { buildPhotoBody, buildPhotoCap, type PhotoBody, type PhotoCap } from "./photo-cap";
 
 /**
  * Фотореалистичный стеклянный флакон с парфюмом (Three.js) — по утверждённому образцу flakon-namuna.html.
@@ -34,6 +34,8 @@ export type Bottle3DSpec = {
   labelPrint?: boolean;
   /** крышка из фотографий (лист снимков с разных сторон) вместо нарисованной */
   photoCap?: PhotoCap;
+  /** корпус тоже из фотографий (с того же листа) — стекло, этикетка и жидкость как в оригинале */
+  photoBody?: PhotoBody;
   shape: Shape;
 };
 
@@ -461,7 +463,15 @@ export function buildBottle(
     bottle.add(new THREE.Mesh(keep(geo), mat));
   }
 
+  let photoBody: ReturnType<typeof buildPhotoBody> | null = null;
   if (spec.photoCap && capTex) {
+    if (spec.photoBody) {
+      // весь флакон — с листа снимков: свою оболочку, жидкость и трубку прячем
+      bottle.children.forEach((c) => (c.visible = false));
+      photoBody = buildPhotoBody(spec.photoCap, spec.photoBody, HT, capTex, spec.fill ?? 0.75);
+      bottle.add(photoBody.mesh);
+      disposables.push(photoBody);
+    }
     const pc = buildPhotoCap(spec.photoCap, HT, capTex);
     bottle.add(pc.mesh);
     disposables.push(pc);
@@ -582,6 +592,7 @@ export function buildBottle(
     }
     capGeo.attributes.position.needsUpdate = true;
     capGeo.computeVertexNormals();
+    photoBody?.update(sx, sz, st.amp, st.T);
   }
 
   /** сколько ещё «движения» осталось — когда мало, рендер можно остановить */

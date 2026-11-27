@@ -20,8 +20,6 @@ export const GLASS_RING: Bottle3DSpec[] = [
     slug: "clive-christian-out-of-the-blue",
     color: "#11239a",
     fill: 0.75,
-    label: "/labels/clive-christian-out-of-the-blue.png",
-    labelPrint: true,
     // корпус по листу снимков: флакон 625 px в высоту (y 170…795), корпус 218 × 120 px с y = 384
     shape: {
       aspect: 0.349,
@@ -45,6 +43,8 @@ export const GLASS_RING: Bottle3DSpec[] = [
       bottomPx: 795,
       heightPx: 625,
     },
+    // синее стекло и этикетка — с листа снимков, жидкость — расчётом, как в оригинале
+    photoBody: { exp: 0.24, rows: [[384, 1, 1], [385, 57, 35], [388, 82, 46], [391, 90, 51], [407, 105, 58], [414, 109, 60], [780, 109, 60], [789, 106, 58], [794, 99, 53], [795, 1, 1]] },
   },
   {
     slug: "clive-christian-uncovered",
