@@ -246,6 +246,10 @@ export class GlassRing {
     const w = this.host.clientWidth;
     const h = this.host.clientHeight;
     if (!w || !h) return;
+    // узкий экран (телефон, узкое окно): кольцо целиком по ширине, флаконы мелкие — рисуем вдвое плотнее
+    // и даём браузеру ужать: края гладкие, мелкие детали чище. На широком хватает плотности экрана (до 1.75×).
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(w < 760 ? 2 : Math.min(dpr, this.touch ? 2 : 1.75));
     this.renderer.setSize(w, h, false);
     this.living.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
     const aspect = w / h;

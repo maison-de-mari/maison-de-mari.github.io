@@ -45,7 +45,7 @@ varying vec3 vP;
 varying float vYaw;
 vec3 view(int i, vec3 p, float y){
   float u = cx[i] + (p.x * cos(ang[i]) + p.z * sin(ang[i])) * ratio[i] * 0.975;
-  return texture2D(sheet, vec2(u / size.x, 1.0 - y / size.y)).rgb;
+  return texture2D(sheet, vec2(u / size.x, 1.0 - y / size.y), -1.0).rgb;
 }
 void main(){
   vec3 p = vP * k;
@@ -146,7 +146,7 @@ uniform float wave;
 uniform float time;
 varying vec3 vP;
 varying vec3 vCam;
-vec3 ink(float x, float y){ return texture2D(pic, vec2(x / size.x, 1.0 - y / size.y)).rgb; }
+vec3 ink(float x, float y){ return texture2D(pic, vec2(x / size.x, 1.0 - y / size.y), -1.0).rgb; }
 void main(){
   vec3 p = vP;
   float y = 482.0 - p.y;

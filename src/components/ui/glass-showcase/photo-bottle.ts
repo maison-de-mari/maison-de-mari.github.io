@@ -50,7 +50,8 @@ void main(){
   // где брать снимок спереди/сзади, а где — сбоку (у круглых — шире: этикетка огибает цилиндр)
   float face = smoothstep(faceRange.x, faceRange.y, abs(vN.y));
   vec2 uo = p.z > 0.0 ? uf : ub;
-  vec3 photo = mix(texture2D(pic, us).rgb, texture2D(pic, uo).rgb, face);
+  // смещение мип-уровня: маленький флакон берёт более чёткую копию снимка (иначе на узком экране — мыло)
+  vec3 photo = mix(texture2D(pic, us, -1.0).rgb, texture2D(pic, uo, -1.0).rgb, face);
   float g = mix(texture2D(gmap, us).r, texture2D(gmap, uo).r, face);
   vec3 color = photo;
   if (hasCav > 0.5 && g > 0.01) {
