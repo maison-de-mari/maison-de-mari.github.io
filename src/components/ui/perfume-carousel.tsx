@@ -6,12 +6,9 @@ import { gsap, MOTION_OK, ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { aromas as ALL, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { cart, sum, useCart } from "@/lib/cart";
-import { Scent } from "@/components/scent";
-import { PerfumeRing } from "./perfume-ring/scene";
 import { GlassRing, type RingSpec } from "./glass-showcase/glass-ring";
 import { RevealText } from "./reveal-text";
 import { quality, useQuality } from "@/lib/quality";
-import type { SolidSpec } from "./perfume-ring/solid-bottle";
 
 /*
  * Круглая 3D-витрина Maison De Mari (по мотивам Deck Rack Add To Cart).
@@ -31,36 +28,6 @@ const EASE = [0.22, 1, 0.36, 1] as const;
  */
 const ringSrc = (slug: string, view: "front" | "back" | "side" = "front") => `${BASE}/ring/${slug}-${view}.webp`;
 
-/**
- * Объём каждого флакона: круглый — тело вращения по силуэту фото; плоский — силуэт нужной толщины
- * (depth — толщина в долях ширины, как у настоящего флакона). Бока/верх/низ окрашиваются цветом флакона.
- */
-const SHAPE: Record<string, SolidSpec> = {
-  "louis-vuitton-moon-tale": { kind: "round" },
-  "orto-parisi-boccanera": { kind: "flat", depth: 0.45 },
-  "maison-crivelli-cuir-infrarouge": { kind: "round" },
-  "creed-spring-flower": { kind: "flat", depth: 0.55 },
-  "versace-cedrat-de-diamante": { kind: "round" },
-  "gritti-tutu": { kind: "flat", depth: 0.9 },
-  "ysl-libre-berry-crush": { kind: "flat", depth: 0.42 },
-  "byredo-animalique": { kind: "round" },
-  "louis-vuitton-lv-lovers": { kind: "round" },
-  "bvlgari-le-gemme-tygar": { kind: "flat", depth: 0.6 },
-  "parfums-de-marly-althair": { kind: "flat", depth: 0.5 },
-  "reservation-riviera-californienne": { kind: "round" },
-  "phlur-vanilla-skin": { kind: "flat", depth: 0.62 },
-  "zielinski-rozen-tobacco-cedarwood-pepper": { kind: "round" },
-  "zielinski-rozen-bergamot-green-tea-sandalwood": { kind: "round" },
-  "essential-parfums-bois-imperial": { kind: "flat", depth: 0.55 },
-  "tom-ford-tobacco-vanille": { kind: "flat", depth: 0.55 },
-  "creed-wild-vetiver": { kind: "flat", depth: 0.55 },
-  "amouage-purpose-50": { kind: "flat", depth: 0.45 },
-  "penhaligons-halfeti-leather": { kind: "round" },
-  "hormone-paris-this-is-not-caffeine": { kind: "flat", depth: 0.45 },
-  "guerlain-nerolia-vetiver-set": { kind: "round" },
-  "mfk-724": { kind: "flat", depth: 0.6 },
-  "bleu-de-chanel-parfum": { kind: "flat", depth: 0.38 },
-};
 const num = (i: number) => String(i + 1).padStart(2, "0");
 const priceFrom = (a: AromaWithImages) =>
   a.ask ? "цена по запросу" : a.usd ? `от ${minUsd(a)} $ · под заказ` : `от ${sum(minSum(a))}`;
@@ -80,7 +47,7 @@ export function PerfumeCarousel({
   const stage = useRef<HTMLElement>(null);
   const topText = useRef<HTMLDivElement>(null);
   const bottomText = useRef<HTMLDivElement>(null);
-  const ring = useRef<PerfumeRing | GlassRing | null>(null);
+  const ring = useRef<GlassRing | null>(null);
   const frontBtn = useRef<HTMLButtonElement>(null);
   const [front, setFront] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
@@ -121,57 +88,25 @@ export function PerfumeCarousel({
     ring.current?.select(null);
   }, []);
 
-  // лёгкий режим (слабая видеокарта, телефон): объёмные флаконы из фото без стеклянных слоёв и без самовращения
+  // режим графики: на слабой видеокарте и телефоне витрина рисуется легче (см. GlassRing, lite)
   const tier = useQuality();
 
   useEffect(() => {
     const el = host.current;
-    if (!el || !tier) return;
-    const lite = tier === "lite";
-    const images = items.map((a) => ringSrc(a.slug));
-    const events = {
-      onFront: setFront,
-      onHover: () => {},
-      onPick: pick,
-      onEmpty: close,
-      onReady: () => setReady(true),
-    };
-    if (glass) {
-      // стеклянная витрина: рисует только при движении, поэтому одинаково для всех устройств
-      const g = new GlassRing(el, glass, events, BASE);
-      ring.current = g;
-      return () => {
-        g.dispose();
-        ring.current = null;
-      };
-    }
-    const r = new PerfumeRing(
+    if (!el || !tier || !glass) return;
+    const g = new GlassRing(
       el,
-      images,
-      events,
-      // флаконы неподвижно стоят лицом наружу кольца и показывают бока и спину, когда оно крутится
-      "outward",
-      // к форме — фото сзади и (у плоских) сбоку
-      items.map((a) => {
-        const sp = SHAPE[a.slug];
-        if (!sp) return null;
-        return {
-          ...sp,
-          back: ringSrc(a.slug, "back"),
-          side: ringSrc(a.slug, "side"),
-          // стекло с жидкостью — только на сильной видеокарте; в лёгком режиме те же объёмные флаконы из фото
-          mask: lite ? undefined : `${BASE}/ring/${a.slug}-mask.png`,
-        };
-      }),
-      lite,
-      () => quality.reportSlow(),
+      glass,
+      { onFront: setFront, onPick: pick, onEmpty: close, onReady: () => setReady(true), onSlow: () => quality.reportSlow() },
+      BASE,
+      tier === "lite",
     );
-    ring.current = r;
+    ring.current = g;
     return () => {
-      r.dispose();
+      g.dispose();
       ring.current = null;
     };
-  }, [items, glass, pick, close, tier]);
+  }, [glass, pick, close, tier]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -211,7 +146,7 @@ export function PerfumeCarousel({
             snap: { snapTo: stops, inertia: false, directional: false, duration: { min: 0.25, max: 0.7 }, delay: 0.12, ease: "power2.inOut" },
             onUpdate: (self) => {
               const r = ring.current;
-              if (r && "setUnfold" in r) r.setUnfold(self.progress);
+              r?.setUnfold(self.progress);
               setInside(self.progress > 0.02);
             },
           },
@@ -235,7 +170,6 @@ export function PerfumeCarousel({
       onKeyDown={onKey}
       className="relative isolate h-[max(640px,100svh)] w-full overflow-hidden text-ink select-none"
     >
-      {tier === "rich" && <Scent tone="light" />}
       <div ref={host} className={`absolute inset-0 transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`} />
 
       {/* шапка — общая, закреплённая: SiteNav */}

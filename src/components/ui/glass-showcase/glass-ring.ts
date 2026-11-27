@@ -35,6 +35,8 @@ export type GlassRingEvents = {
   onPick: (i: number) => void;
   onEmpty: () => void;
   onReady: () => void;
+  /** кадры не успевают — пора на лёгкий режим (вызывается один раз) */
+  onSlow?: () => void;
 };
 
 const BG = new THREE.Color("#f5f1ea");
@@ -72,6 +74,9 @@ export class GlassRing {
   private stirAt: { x: number; z: number; t: number } | null = null;
   private hitP = new THREE.Vector3();
   private offTheme: () => void;
+  private ema = 16;
+  private busyFrames = 0;
+  private slowSent = false;
   /** чёткие листы снимков: грузятся только для флакона в крупном плане и того, на который смотрим изнутри */
   private hd = new Map<number, { tex: THREE.Texture | null; used: number }>();
   private hdSrc = new Map<number, { url: string; pb: { setPic(t: THREE.Texture): void; pic: THREE.Texture } }>();
@@ -114,7 +119,17 @@ export class GlassRing {
   private ro: ResizeObserver;
   private io: IntersectionObserver;
 
-  constructor(private host: HTMLElement, specs: RingSpec[], private ev: GlassRingEvents, base = "") {
+  /**
+   * lite — слабая видеокарта или телефон: меньше пикселей (бюджет ~2.2 Мп против ~4.5 Мп), без сглаживания на ПК,
+   * отражение в воде мельче, в покое ~24 кадра. Внешне почти то же, а нагрузка в разы меньше.
+   */
+  constructor(
+    private host: HTMLElement,
+    specs: RingSpec[],
+    private ev: GlassRingEvents,
+    base = "",
+    private lite = false,
+  ) {
     this.n = specs.length;
     this.slots = Math.max(3, this.n);
     this.S = this.n > 3 ? 0.68 : 1;
@@ -122,7 +137,8 @@ export class GlassRing {
     const touch = (this.touch = window.matchMedia("(pointer: coarse)").matches);
     this.alive = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // сглаживание краёв и на телефоне: мобильные видеокарты делают его почти бесплатно, а без него флаконы «рваные»
-    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }));
+    // сглаживание: на мобильных видеокартах почти бесплатно; на слабой видеокарте ПК (большой экран) — дорого
+    const r = (this.renderer = new THREE.WebGLRenderer({ antialias: !lite || touch, alpha: true, powerPreference: "high-performance" }));
     r.setClearColor(0x000000, 0); // прозрачный — за витриной виден фон страницы (сетка)
     // на телефоне кольцо по ширине экрана и флаконы мелкие — рисуем в 2× (было 1.5×, выходило мыльно)
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 2 : 1.75));
@@ -254,9 +270,12 @@ export class GlassRing {
     // узкий экран (телефон, узкое окно): кольцо целиком по ширине, флаконы мелкие — рисуем вдвое плотнее
     // и даём браузеру ужать: края гладкие, мелкие детали чище. На широком хватает плотности экрана (до 1.75×).
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(w < 760 ? 2 : Math.min(dpr, this.touch ? 2 : 1.75));
+    const want = w < 760 ? 2 : Math.min(dpr, this.touch ? 2 : 1.75);
+    // бюджет пикселей: на большом экране со слабой видеокартой не рисуем 4–11 Мп за кадр
+    const budget = (this.lite ? 2.2 : 4.5) * 1e6;
+    this.renderer.setPixelRatio(Math.max(0.75, Math.min(want, Math.sqrt(budget / (w * h)))));
     this.renderer.setSize(w, h, false);
-    this.living.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
+    this.living.setSize(this.renderer.domElement.width, this.renderer.domElement.height, this.lite ? 0.33 : 0.5);
     const aspect = w / h;
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
@@ -557,12 +576,20 @@ export class GlassRing {
       this.raf = 0;
       if (!this.visible || this.disposed) return;
       // в покое вода живёт реже: ~30 кадров (телефон ~24)
-      const gap = this.calm ? (this.touch ? 40 : 32) : 15.5;
+      const gap = this.calm ? (this.touch || this.lite ? 42 : 32) : 15.5;
       if (this.last && t - this.lastDraw < gap) {
         this.raf = requestAnimationFrame(tick);
         return;
       }
       const dt = Math.min(0.033, this.last ? (t - this.last) / 1000 : 0.016);
+      // следим, успевают ли кадры, пока что-то движется: стабильно реже ~28 к/с — просим лёгкий режим
+      if (!this.calm && this.last && !this.lite && !this.slowSent) {
+        this.ema += (t - this.last - this.ema) * 0.05;
+        if (++this.busyFrames > 150 && this.ema > 36) {
+          this.slowSent = true;
+          this.ev.onSlow?.();
+        }
+      }
       this.last = t;
       this.lastDraw = t;
       const busy = this.frame(dt);

@@ -44,24 +44,37 @@ uniform vec3 sky;     // «небо», что отражается у полог
 varying vec3 vW;
 varying float vD;
 varying float vS;
-float swell(vec2 p){
-  return 0.010 * sin(dot(p, vec2(0.83, 0.55)) * 2.3 + time * 0.9)
-       + 0.006 * sin(dot(p, vec2(-0.45, 0.89)) * 4.1 - time * 1.3)
-       + 0.003 * sin(dot(p, vec2(0.97, -0.24)) * 8.7 + time * 2.1);
-}
-float ripples(vec2 p){
-  float h = 0.0;
+// высота воды и её наклон за один проход (раньше — три вызова для разностей): x — высота, yz — наклон по x и z;
+// rh — высота только от кругов (для светлых гребней)
+vec3 waves(vec2 p, out float rh){
+  vec3 o = vec3(0.0);
+  vec2 k1 = vec2(0.83, 0.55); float s1 = dot(p, k1) * 2.3 + time * 0.9;
+  o += vec3(0.010 * sin(s1), 0.010 * 2.3 * cos(s1) * k1);
+  vec2 k2 = vec2(-0.45, 0.89); float s2 = dot(p, k2) * 4.1 - time * 1.3;
+  o += vec3(0.006 * sin(s2), 0.006 * 4.1 * cos(s2) * k2);
+  vec2 k3 = vec2(0.97, -0.24); float s3 = dot(p, k3) * 8.7 + time * 2.1;
+  o += vec3(0.003 * sin(s3), 0.003 * 8.7 * cos(s3) * k3);
+  rh = 0.0;
   for (int i = 0; i < ${MAX_RIPPLES}; i++) {
     vec4 r = rip[i];
     float age = time - r.z;
     if (r.w <= 0.0 || age < 0.0 || age > 5.0) continue;
-    float d = length(p - r.xy);
+    vec2 dv = p - r.xy;
+    float d = length(dv) + 1e-4;
     float x = d - age * 0.85;
-    h += r.w * 0.04 * exp(-x * x * 7.0) * sin(x * 19.0) * exp(-age * 0.85) / (1.0 + d * 1.4);
+    if (abs(x) > 1.2) continue; // кольцо волны далеко от этой точки
+    float A = r.w * 0.04 * exp(-age * 0.85);
+    float env = exp(-x * x * 7.0);
+    float sn = sin(x * 19.0);
+    float q = 1.0 / (1.0 + d * 1.4);
+    float h = A * env * sn * q;
+    float dh = A * q * env * (-14.0 * x * sn + 19.0 * cos(x * 19.0)) - h * 1.4 * q;
+    o.x += h;
+    o.yz += dh * dv / d;
+    rh += h;
   }
-  return h;
+  return o;
 }
-float H(vec2 p){ return swell(p) + ripples(p); }
 float caustic(vec2 p){
   vec2 q = p * 3.1;
   float v = sin(q.x + sin(q.y * 1.3 + time * 0.7) * 1.2 + time * 0.5)
@@ -71,9 +84,9 @@ float caustic(vec2 p){
 float wrapA(float a){ return mod(a + 3.14159265, 6.2831853) - 3.14159265; }
 void main(){
   vec2 p = vW.xz;
-  float e = 0.025;
-  float h0 = H(p);
-  vec3 n = normalize(vec3(-(H(p + vec2(e, 0.0)) - h0) / e, 1.0, -(H(p + vec2(0.0, e)) - h0) / e));
+  float rh;
+  vec3 w = waves(p, rh);
+  vec3 n = normalize(vec3(-w.y, 1.0, -w.z));
   vec3 V = normalize(cameraPosition - vW);
   float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
   float across = clamp((vD - edges.x) / (edges.y - edges.x), 0.0, 1.0);
@@ -81,7 +94,7 @@ void main(){
   vec3 c = mix(body, deep, sin(across * 3.14159) * 0.75);
   c += vec3(1.0, 0.97, 0.9) * 0.1 * caustic(p + n.xz * 0.8);
   // гребни кругов чуть светлее — круги видны и без отражения
-  c += vec3(1.0, 0.99, 0.96) * clamp(ripples(p) * 6.0, -0.05, 0.12);
+  c += vec3(1.0, 0.99, 0.96) * clamp(rh * 6.0, -0.05, 0.12);
   // отражение флаконов, искажённое волнами
   vec4 rf = texture2D(refl, gl_FragCoord.xy / res + n.xz * 0.09);
   c = mix(c, rf.rgb, rf.a * mix(0.5, 0.92, fres));
@@ -549,8 +562,9 @@ export class LivingRing {
     });
   }
 
-  setSize(w: number, h: number) {
-    this.rt.setSize(Math.max(2, Math.round(w / 2)), Math.max(2, Math.round(h / 2)));
+  /** scale — доля разрешения для отражения (0.5; в лёгком режиме меньше — вода его всё равно размывает) */
+  setSize(w: number, h: number, scale = 0.5) {
+    this.rt.setSize(Math.max(2, Math.round(w * scale)), Math.max(2, Math.round(h * scale)));
     this.mat.uniforms.res.value.set(w, h);
   }
 

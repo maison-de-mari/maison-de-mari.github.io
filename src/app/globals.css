@@ -76,34 +76,4 @@ body {
   outline-offset: 3px;
 }
 
-/* шлейф аромата (src/components/scent.tsx) */
-.scent-wisps .wisp {
-  fill: none;
-  stroke: url(#scent-fade);
-  stroke-width: 1.2;
-  opacity: 0.35;
-  stroke-dasharray: 900 1400;
-  animation: wisp-flow 22s linear infinite;
-}
-.scent-wisps .wisp-2 {
-  animation-duration: 28s;
-  animation-delay: -9s;
-  opacity: 0.25;
-}
-.scent-wisps .wisp-3 {
-  animation-duration: 34s;
-  animation-delay: -17s;
-  opacity: 0.2;
-}
-@keyframes wisp-flow {
-  to {
-    stroke-dashoffset: -2300;
-  }
-}
 
-@media (prefers-reduced-motion: reduce), (pointer: coarse) {
-  /* на телефоне дымка неподвижна — анимация полноэкранного SVG перерисовывает весь экран */
-  .scent-wisps .wisp {
-    animation: none;
-  }
-}

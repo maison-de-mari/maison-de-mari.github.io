@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { quality } from "@/lib/quality";
 
 /**
  * Снег в три слоя, как в объективе:
@@ -81,6 +82,10 @@ export function Snow() {
     const xb = cb.getContext("2d")!;
     const xf = cf.getContext("2d")!;
     const touch = window.matchMedia("(pointer: coarse)").matches;
+    // слабое устройство: меньше хлопьев и 30 кадров; холсты — в 60% разрешения (хлопья мягкие, разницы не видно)
+    const lite = quality.get() === "lite";
+    const SC = 0.6;
+    const minGap = lite ? 31 : 15.5;
 
     // по 4 спрайта на слой, размеры внутри диапазона слоя
     const sprites = LAYERS.map((L, li) =>
@@ -96,11 +101,15 @@ export function Snow() {
       return { x: Math.random() * w, y: top ? -spr.height - Math.random() * 120 : Math.random() * h, vx: 0, vy: fall, fall, ph: Math.random() * 6.283, spr, L };
     };
     const resize = () => {
-      w = cb.width = cf.width = window.innerWidth;
-      h = cb.height = cf.height = window.innerHeight;
+      w = window.innerWidth;
+      h = window.innerHeight;
+      cb.width = cf.width = Math.round(w * SC);
+      cb.height = cf.height = Math.round(h * SC);
+      xb.setTransform(SC, 0, 0, SC, 0, 0);
+      xf.setTransform(SC, 0, 0, SC, 0, 0);
       if (!flakes.length)
         LAYERS.forEach((L, li) => {
-          const n = Math.max(3, Math.round(L.count * (touch ? 0.5 : 1)));
+          const n = Math.max(3, Math.round(L.count * (touch ? 0.5 : lite ? 0.65 : 1)));
           for (let i = 0; i < n; i++) flakes.push(spawn(L, li, false));
         });
     };
@@ -138,7 +147,7 @@ export function Snow() {
     const idx = new Map(LAYERS.map((L, i) => [L, i]));
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      if (prev && now - prev < 15.5) return;
+      if (prev && now - prev < minGap) return;
       const dt = Math.min(0.05, prev ? (now - prev) / 1000 : 0.016);
       prev = now;
       t += dt;
