@@ -440,7 +440,12 @@ export class GlassRing {
     }
 
     this.bottles.forEach((x, i) => {
-      const a = i * this.step + this.ring;
+      let a = i * this.step + this.ring;
+      if (this.sel !== null && this.sel !== i && f > 0) {
+        // в крупном плане соседи расходятся в стороны: ближние уходят из кадра, дальние — задний план
+        const rel = Math.atan2(Math.sin(a), Math.cos(a));
+        a += Math.sign(rel) * 0.55 * f * (1 - Math.abs(rel) / Math.PI);
+      }
       x.g.position.set(Math.sin(a) * this.R, 0, Math.cos(a) * this.R);
       x.g.rotation.y = a; // лицом наружу кольца
       const s = x.b.state;
@@ -452,8 +457,6 @@ export class GlassRing {
         x.b.step(dt);
         moving = true;
       }
-      // затемнение невыбранных при крупном плане — делаем через видимость: дальние за выбранным не мешают
-      x.g.visible = this.sel === null || this.sel === i || f < 0.98;
       x.g.updateMatrixWorld(true);
       x.box.setFromObject(x.g.children[0]);
     });
