@@ -353,6 +353,13 @@ export class GlassRing {
 
   // ───────────────────────── снаружи
 
+  /** переход в лёгкий режим на ходу — без пересоздания витрины (иначе флаконы заново падают сверху) */
+  setLite(lite: boolean) {
+    if (lite === this.lite) return;
+    this.lite = lite;
+    this.resize();
+  }
+
   select(i: number | null) {
     this.sel = i;
     this.vel = 0;

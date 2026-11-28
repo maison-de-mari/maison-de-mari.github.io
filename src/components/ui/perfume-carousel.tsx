@@ -104,23 +104,32 @@ export function PerfumeCarousel({
 
   // режим графики: на слабой видеокарте и телефоне витрина рисуется легче (см. GlassRing, lite)
   const tier = useQuality();
+  const tierRef = useRef(tier);
+  useEffect(() => {
+    tierRef.current = tier;
+  }, [tier]);
+  const known = tier !== null;
 
   useEffect(() => {
     const el = host.current;
-    if (!el || !tier || !glass) return;
+    if (!el || !tierRef.current || !glass) return;
     const g = new GlassRing(
       el,
       glass,
       { onFront, onPick: pick, onEmpty: close, onReady: () => setReady(true), onSlow: () => quality.reportSlow() },
       BASE,
-      tier === "lite",
+      tierRef.current === "lite",
     );
     ring.current = g;
     return () => {
       g.dispose();
       ring.current = null;
     };
-  }, [glass, pick, close, tier, onFront]);
+  }, [glass, pick, close, known, onFront]);
+  // режим сменился (кадры не успевали) — витрина просто рисует легче
+  useEffect(() => {
+    if (tier) ring.current?.setLite(tier === "lite");
+  }, [tier]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -344,62 +353,92 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
 
   // фокус в карточку, когда камера доехала
   useEffect(() => {
-    const t = window.setTimeout(() => first.current?.querySelector<HTMLElement>("button,a")?.focus({ preventScroll: true }), reduce ? 0 : 900);
+    const t = window.setTimeout(() => first.current?.focus({ preventScroll: true }), reduce ? 0 : 900);
     return () => window.clearTimeout(t);
   }, [a.slug, reduce]);
+
+  const pyramid = d
+    ? (
+        [
+          ["Верх", d.top, 10],
+          ["Сердце", d.heart, 17],
+          ["База", d.base, 24],
+        ] as const
+      ).filter(([, l]) => l.length)
+    : [];
+  const tgLink = "text-gold underline decoration-gold/40 underline-offset-4 transition-colors hover:decoration-gold";
+  const goldBtn =
+    "inline-flex h-12 items-center rounded-full bg-[linear-gradient(180deg,#c9a463,#9a7438)] px-6 text-xs font-semibold uppercase tracking-[0.2em] text-night shadow-[inset_0_1px_0_rgba(255,255,255,.4)] transition-[filter,transform] hover:brightness-110 active:scale-[.97]";
 
   return (
     <div
       data-card
       role="dialog"
       aria-label={`${a.brand} ${a.name}`}
-      className="absolute inset-x-3 bottom-3 z-30 max-h-[50svh] sm:inset-x-6 sm:bottom-6 lg:inset-x-auto lg:bottom-auto lg:right-[6vw] lg:top-1/2 lg:max-h-[calc(100svh-7rem)] lg:w-[min(31rem,40vw)] lg:-translate-y-1/2"
+      className="absolute inset-x-3 bottom-3 z-30 max-h-[52svh] sm:inset-x-6 sm:bottom-6 lg:inset-x-auto lg:bottom-auto lg:right-[6vw] lg:top-1/2 lg:max-h-[calc(100svh-7rem)] lg:w-[min(32rem,40vw)] lg:-translate-y-1/2"
     >
       <motion.div
         key={a.slug}
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.7, delay: reduce ? 0 : 0.7, ease: EASE } }}
         exit={{ opacity: 0, y: 12, filter: "blur(6px)", transition: { duration: 0.22 } }}
-        className="max-h-[inherit] overflow-y-auto overscroll-contain rounded-2xl bg-card/93 p-5 shadow-[0_30px_80px_-30px_rgba(70,45,20,.35)] ring-1 ring-ink/10 sm:p-7"
+        className="relative max-h-[inherit] overflow-y-auto overscroll-contain rounded-[22px] bg-card/90 shadow-[0_40px_90px_-40px_rgba(40,25,10,.55)] ring-1 ring-ink/10 backdrop-blur-xl"
       >
-        <motion.div ref={first} variants={stagger} custom={reduce ? 0 : 0.8} initial="hidden" animate="show" className="flex flex-col">
-          <motion.p variants={rise} className="text-[11px] font-medium uppercase tracking-[0.28em] text-soft">
-            Maison De Mari · № {num(index)}
-            {d ? ` · ${d.family.ru}` : ""}
-          </motion.p>
-          <motion.p variants={rise} className="mt-4 text-xs font-medium uppercase tracking-[0.3em] text-gold">
+        {/* паспорт аромата: тонкая золотая рамка внутри карточки */}
+        <div aria-hidden className="pointer-events-none absolute inset-2 rounded-[16px] ring-1 ring-gold/25" />
+        <motion.div ref={first} tabIndex={-1} variants={stagger} custom={reduce ? 0 : 0.8} initial="hidden" animate="show" className="relative flex flex-col px-6 py-6 outline-none sm:px-9 sm:py-8">
+          {/* шапка: номер и семейство */}
+          <motion.div variants={rise} className="flex items-baseline justify-between gap-4 border-b border-gold/25 pb-3">
+            <span className="font-serif text-[1.35rem] italic leading-none text-gold">№ {num(index)}</span>
+            <span className="truncate text-[10px] font-medium uppercase tracking-[0.26em] text-soft">{d ? d.family.ru : "Maison De Mari"}</span>
+          </motion.div>
+
+          <motion.p variants={rise} className="mt-5 text-[11px] font-medium uppercase tracking-[0.34em] text-gold">
             {a.brand}
           </motion.p>
-          <RevealText as="h2" text={a.name} inView={false} delay={0.25} stagger={0.1} className="mt-1.5 font-serif text-[clamp(2.1rem,3.8vw,3.1rem)] font-light leading-[1.02]" />
-          <motion.p variants={rise} className="order-5 mt-3 text-[15px] leading-relaxed text-ink/85 lg:order-none">
+          <RevealText as="h2" text={a.name} inView={false} delay={0.25} className="mt-2 font-serif text-[clamp(2.2rem,3.9vw,3.2rem)] font-normal leading-[1.02] tracking-[-0.01em]" />
+          {d?.conc && (
+            <motion.p variants={rise} className="mt-1 font-serif text-base italic text-soft">
+              {d.conc}
+            </motion.p>
+          )}
+          <motion.p variants={rise} className="order-5 mt-4 font-serif text-[17px] italic leading-relaxed text-ink/80 lg:order-none">
             {a.description.ru}
           </motion.p>
 
-          {d && (
-            <motion.dl variants={rise} className="order-5 mt-5 grid lg:order-none grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-ink/10 pt-4 text-sm">
-              {(
-                [
-                  ["Верх", d.top],
-                  ["Сердце", d.heart],
-                  ["База", d.base],
-                ] as const
-              )
-                .filter(([, l]) => l.length)
-                .map(([k, l]) => (
-                  <div key={k} className="contents">
-                    <dt className="self-center text-[10px] font-medium uppercase tracking-[0.24em] text-soft">{k}</dt>
-                    <dd>{notes([...l])}</dd>
-                  </div>
-                ))}
-              <dt className="self-center text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Когда</dt>
-              <dd>{d.wear.ru}</dd>
-            </motion.dl>
+          {/* пирамида: золотые полоски растут сверху вниз, как у настоящей пирамиды нот */}
+          {pyramid.length > 0 && (
+            <motion.ul variants={rise} className="order-5 mt-6 flex flex-col gap-3 lg:order-none">
+              {pyramid.map(([k, l, w]) => (
+                <li key={k} className="grid grid-cols-[26px_5.2rem_1fr] items-baseline gap-x-2">
+                  <span aria-hidden className="flex justify-center self-center">
+                    <span className="h-[3px] rounded-full bg-gold/75" style={{ width: w }} />
+                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-[0.26em] text-soft">{k}</span>
+                  <span className="font-serif text-[16px] leading-snug">{notes([...l])}</span>
+                </li>
+              ))}
+              {d && (
+                <li className="mt-1 flex items-center gap-2 border-t border-ink/10 pt-3 text-[13px] text-soft">
+                  <svg aria-hidden viewBox="0 0 24 24" className="size-4 text-gold" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="8.5" />
+                    <path d="M12 7.5V12l3 2" />
+                  </svg>
+                  {d.wear.ru}
+                </li>
+              )}
+            </motion.ul>
           )}
 
           {variants.length > 0 && (
             <>
               {variants.length > 1 && (
-                <motion.div variants={rise} role="radiogroup" aria-label="Объём" className="order-3 mt-4 flex lg:order-none lg:mt-5 flex-wrap gap-2">
+                <motion.div
+                  variants={rise}
+                  role="radiogroup"
+                  aria-label="Объём"
+                  className="order-3 mt-5 inline-flex self-start rounded-full bg-ink/[0.05] p-1 ring-1 ring-ink/10 lg:order-none lg:mt-7"
+                >
                   {variants.map((x, i) => (
                     <button
                       key={x.label}
@@ -407,19 +446,25 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
                       role="radio"
                       aria-checked={i === v}
                       onClick={() => setV(i)}
-                      className={`min-h-11 rounded-full px-4 text-sm transition-colors ${
-                        i === v ? "bg-ink text-night" : "text-ink/80 ring-1 ring-ink/20 hover:ring-ink/45"
-                      }`}
+                      className={`relative min-h-10 rounded-full px-5 text-sm transition-colors duration-300 ${i === v ? "text-night" : "text-ink/75 hover:text-ink"}`}
                     >
-                      {x.label}
+                      {i === v && (
+                        <motion.span
+                          layoutId={`vol-${a.slug}`}
+                          aria-hidden
+                          className="absolute inset-0 rounded-full bg-[linear-gradient(180deg,#c9a463,#9a7438)] shadow-[inset_0_1px_0_rgba(255,255,255,.35)]"
+                          transition={{ type: "spring", bounce: 0.18, duration: 0.45 }}
+                        />
+                      )}
+                      <span className="relative">{x.label}</span>
                     </button>
                   ))}
                 </motion.div>
               )}
-              <motion.div variants={rise} className="order-4 mt-4 flex flex-wrap items-center justify-between gap-4 lg:order-none lg:mt-5">
+              <motion.div variants={rise} className="order-4 mt-5 flex flex-wrap items-end justify-between gap-4 lg:order-none lg:mt-6">
                 <div>
-                  <span className="block text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Распив · {variant.label}</span>
-                  <span className="mt-1 block text-2xl font-light tabular-nums">{sum(variant.price)}</span>
+                  <span className="block text-[10px] font-medium uppercase tracking-[0.26em] text-soft">Распив · {variant.label}</span>
+                  <span className="mt-1 block font-serif text-[2rem] leading-none tabular-nums">{sum(variant.price)}</span>
                 </div>
                 <SprayButton
                   inCart={inCart}
@@ -430,46 +475,32 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
             </>
           )}
 
-          {a.usd && (
-            <motion.div variants={rise} className="order-4 mt-4 flex flex-wrap items-center justify-between gap-4 lg:order-none lg:mt-5">
+          {(a.usd || a.ask) && (
+            <motion.div variants={rise} className="order-4 mt-6 flex flex-wrap items-end justify-between gap-4 lg:order-none">
               <div>
-                <span className="block text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Флакон под заказ</span>
-                <span className="mt-1 block text-2xl font-light tabular-nums">{a.usd.map((u) => `${u.label} — ${u.usd} $`).join(" · ")}</span>
+                <span className="block text-[10px] font-medium uppercase tracking-[0.26em] text-soft">{a.usd ? "Флакон под заказ" : "Распив и флакон"}</span>
+                <span className="mt-1 block font-serif text-[1.7rem] leading-tight tabular-nums">
+                  {a.usd ? a.usd.map((u) => `${u.label} — ${u.usd} $`).join(" · ") : "Цена по запросу"}
+                </span>
               </div>
-              <a
-                href={TG}
-                target="_blank"
-                rel="noopener"
-                className="inline-flex h-12 items-center rounded-full bg-gold px-6 text-xs font-semibold uppercase tracking-[0.2em] text-night transition-[filter,transform] hover:brightness-110 active:scale-[.97]"
-              >
-                Заказать в Telegram
-              </a>
-            </motion.div>
-          )}
-
-          {a.ask && (
-            <motion.div variants={rise} className="order-4 mt-4 flex flex-wrap items-center justify-between gap-4 lg:order-none lg:mt-5">
-              <div>
-                <span className="block text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Распив и флакон</span>
-                <span className="mt-1 block text-2xl font-light">Цена по запросу</span>
-              </div>
-              <a
-                href={TG}
-                target="_blank"
-                rel="noopener"
-                className="inline-flex h-12 items-center rounded-full bg-gold px-6 text-xs font-semibold uppercase tracking-[0.2em] text-night transition-[filter,transform] hover:brightness-110 active:scale-[.97]"
-              >
-                Узнать в Telegram
+              <a href={TG} target="_blank" rel="noopener" className={goldBtn}>
+                {a.usd ? "Заказать в Telegram" : "Узнать в Telegram"}
               </a>
             </motion.div>
           )}
 
           {a.bottle && (
-            <motion.p variants={rise} className="order-6 mt-4 text-sm text-soft lg:order-none">
-              Полный флакон под заказ: <span className="text-ink/90">{a.bottle}</span> ·{" "}
-              <a href={TG} target="_blank" rel="noopener" className="text-gold underline-offset-4 hover:underline">
-                уточнить в Telegram
-              </a>
+            <motion.p variants={rise} className="order-6 mt-5 flex items-start gap-2.5 rounded-xl bg-ink/[0.04] px-3.5 py-3 text-[13px] leading-snug text-soft lg:order-none">
+              <svg aria-hidden viewBox="0 0 24 24" className="mt-px size-4 shrink-0 text-gold" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+                <path d="M10 2.5h4v3h-4zM9 5.5h6l1 3H8z" />
+                <rect x="6" y="8.5" width="12" height="13" rx="2.5" />
+              </svg>
+              <span>
+                Полный флакон под заказ: <span className="text-ink/90">{a.bottle}</span> ·{" "}
+                <a href={TG} target="_blank" rel="noopener" className={tgLink}>
+                  уточнить в Telegram
+                </a>
+              </span>
             </motion.p>
           )}
 
@@ -477,9 +508,9 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
             variants={rise}
             type="button"
             onClick={onClose}
-            className="order-7 mt-6 inline-flex self-start lg:order-none min-h-11 items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-soft transition-colors hover:text-ink"
+            className="group order-7 mt-6 inline-flex min-h-11 items-center gap-2 self-start text-[11px] font-medium uppercase tracking-[0.26em] text-soft transition-colors hover:text-ink lg:order-none"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden className="transition-transform duration-300 group-hover:-translate-x-1">
               <path d="M19 12H5m6-6-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Назад к витрине
