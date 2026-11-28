@@ -88,6 +88,20 @@ export function PerfumeCarousel({
     ring.current?.select(null);
   }, []);
 
+  // Подпись под витриной. Пока кольцо крутится быстро, флаконы проходят перёд по 10+ раз в секунду —
+  // менять подпись на каждый (перерисовка, буквы, размытие) значит отнимать время у кадров витрины: она подёргивается.
+  // Поэтому: кольцо идёт медленно — подпись меняется сразу, как раньше; быстро — один раз, когда оно притормозит.
+  const frontAt = useRef(0);
+  const frontTimer = useRef(0);
+  const onFront = useCallback((i: number) => {
+    const now = performance.now();
+    window.clearTimeout(frontTimer.current);
+    if (now - frontAt.current > 220) setFront(i);
+    else frontTimer.current = window.setTimeout(() => setFront(i), 140);
+    frontAt.current = now;
+  }, []);
+  useEffect(() => () => window.clearTimeout(frontTimer.current), []);
+
   // режим графики: на слабой видеокарте и телефоне витрина рисуется легче (см. GlassRing, lite)
   const tier = useQuality();
 
@@ -97,7 +111,7 @@ export function PerfumeCarousel({
     const g = new GlassRing(
       el,
       glass,
-      { onFront: setFront, onPick: pick, onEmpty: close, onReady: () => setReady(true), onSlow: () => quality.reportSlow() },
+      { onFront, onPick: pick, onEmpty: close, onReady: () => setReady(true), onSlow: () => quality.reportSlow() },
       BASE,
       tier === "lite",
     );
@@ -106,7 +120,7 @@ export function PerfumeCarousel({
       g.dispose();
       ring.current = null;
     };
-  }, [glass, pick, close, tier]);
+  }, [glass, pick, close, tier, onFront]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {

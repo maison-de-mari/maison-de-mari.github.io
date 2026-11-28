@@ -113,6 +113,11 @@ export class GlassRing {
   private raf = 0;
   private last = 0;
   private lastDraw = 0;
+  /** экран: средний интервал между его кадрами (мс), время прошлого кадра экрана, сколько их прошло с нашего кадра */
+  private vs = 16.7;
+  private tickAt = 0;
+  private ticks = 0;
+  private odd = 0;
   private force = true;
   private visible = true;
   private disposed = false;
@@ -466,6 +471,9 @@ export class GlassRing {
     if (this.down) {
       if (!this.dragging && Math.abs(e.clientX - this.startX) > 7 && this.unfold < 0.001) {
         this.dragging = true;
+        // первые 7 px (порог «это не нажатие») не догоняем одним кадром — иначе кольцо в начале движения делает рывок
+        this.prevX = e.clientX;
+        this.prevT = performance.now();
         this.spinning = this.sel !== null;
         if (!this.spinning) this.target = null;
         this.renderer.domElement.setPointerCapture(e.pointerId);
@@ -577,10 +585,26 @@ export class GlassRing {
       if (!this.visible || this.disposed) return;
       // в покое вода живёт реже: ~30 кадров (телефон ~24)
       const gap = this.calm ? (this.touch || this.lite ? 42 : 32) : 15.5;
-      if (this.last && t - this.lastDraw < gap) {
+      // Пропуск считаем в кадрах экрана, а не в миллисекундах: метка времени кадра «дрожит» на 1–2 мс,
+      // и при сравнении 16.7 мс с порогом 15.5 кадр изредка пропускался зря — кольцо на вращении дёргалось.
+      // vs — средний интервал экрана (60 Гц ≈ 16.7, 120 Гц ≈ 8.3); выбросы (пропущенные кадры) в него не идут,
+      // но если «выбросы» идут подряд — экран сменил частоту, принимаем новую.
+      const d = this.tickAt ? t - this.tickAt : 0;
+      this.tickAt = t;
+      if (d > 3 && d < this.vs * 1.6) {
+        this.vs += (d - this.vs) * 0.05;
+        this.odd = 0;
+      } else if (d >= this.vs * 1.6 && d < 60 && ++this.odd > 20) {
+        this.vs = d;
+        this.odd = 0;
+      }
+      this.ticks++;
+      const need = Math.max(1, Math.ceil((gap - 1.2) / this.vs));
+      if (this.last && this.ticks < need && t - this.lastDraw < gap) {
         this.raf = requestAnimationFrame(tick);
         return;
       }
+      this.ticks = 0;
       const dt = Math.min(0.033, this.last ? (t - this.last) / 1000 : 0.016);
       // следим, успевают ли кадры, пока что-то движется: стабильно реже ~28 к/с — просим лёгкий режим
       if (!this.calm && this.last && !this.lite && !this.slowSent) {
@@ -595,7 +619,7 @@ export class GlassRing {
       const busy = this.frame(dt);
       this.calm = !busy;
       if (busy || this.alive) this.raf = requestAnimationFrame(tick);
-      else this.last = 0;
+      else this.last = this.tickAt = 0;
     };
     this.raf = requestAnimationFrame(tick);
   }
