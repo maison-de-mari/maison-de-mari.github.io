@@ -305,7 +305,7 @@ export class LivingRing {
   /** перетекание цветов при смене темы: from → to за ~0.7 с */
   private pal = { t: 1, from: [] as THREE.Color[], to: [] as THREE.Color[] };
 
-  constructor(opts: { R: number; half: number; dh: number; touch: boolean; env: THREE.Texture }) {
+  constructor(opts: { R: number; half: number; dh: number; touch: boolean; env: THREE.Texture; deep?: number }) {
     const { R, half, dh, touch } = opts;
     this.R = R;
     this.rho = R;
@@ -385,6 +385,20 @@ export class LivingRing {
     ).map(([x, y]) => [x - R, y]);
     const plaster = (this.plaster = k(new THREE.MeshStandardMaterial({ color: "#f6f2ec", roughness: 0.62, envMapIntensity: 1.25, side: THREE.DoubleSide })));
     add(new Sweep(polyline(rim, true), SEG, true), plaster);
+    // «толща воды» — невидимый объём под каналом (пишет только глубину): всё, что под водой, не видно ни сверху,
+    // ни сквозь середину кольца — флаконы при появлении выходят прямо из воды
+    const deep = opts.deep ?? 4;
+    const pool: [number, number][] = [
+      [this.ri - R + 0.004, -0.015],
+      [this.ro - R - 0.004, -0.015],
+      [this.ro - R - 0.004, -deep],
+      [this.ri - R + 0.004, -deep],
+    ];
+    add(
+      new Sweep(polyline(pool, true), SEG, true),
+      k(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide })),
+      -2,
+    );
     // торцы появляются, когда круг разомкнут
     add(new Cap([...rim].reverse(), 0), plaster);
     add(new Cap([...rim].reverse(), 1), plaster);

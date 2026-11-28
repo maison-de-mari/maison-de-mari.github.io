@@ -167,7 +167,7 @@ export class GlassRing {
     this.R = Math.max(maxW * 1.05, gap / (2 * Math.sin(this.step / 2)));
     // канал воды: флаконы стоят посередине, по бокам — место для лепестков
     const dh = Math.max(...specs.map(depthOf)) * this.S;
-    this.living = new LivingRing({ R: this.R, half: dh + Math.max(0.75, HT * this.S * 0.22), dh, touch, env: this.env });
+    this.living = new LivingRing({ R: this.R, half: dh + Math.max(0.75, HT * this.S * 0.22), dh, touch, env: this.env, deep: HT * this.S * 1.3 });
     this.scene.add(this.living.group);
     // тема: подиум и вода перекрашиваются плавно
     this.living.setDark(getTheme() === "dark", true);
