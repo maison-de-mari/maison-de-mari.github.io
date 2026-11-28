@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* dark: — по нашей теме (data-theme на html), а не по настройке системы */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* Maison De Mari — светлая тема: тёплый белый фон, белый мрамор и золото; Jost — подписи и текст, Cormorant — заголовки
    (тонкий с засечками), рукописный — только логотип.

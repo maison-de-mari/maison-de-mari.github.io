@@ -252,8 +252,9 @@ export function PerfumeCarousel({
                 <RevealText
                   text={f.name}
                   inView={false}
-                  stagger={0.07}
-                  className="mt-1 block truncate font-serif text-[clamp(1.6rem,3vw,2.2rem)] font-light leading-tight transition-colors group-hover:text-gold"
+                  ink
+                  inkTime={2.4}
+                  className="mt-1 block truncate font-serif text-[clamp(1.95rem,3.7vw,2.75rem)] font-normal leading-tight text-[#0d0b09] transition-colors group-hover:text-gold dark:text-ink"
                 />
                 <span className="mt-1 block text-sm text-soft">{priceFrom(f)}</span>
               </motion.span>
@@ -396,7 +397,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
           <motion.p variants={rise} className="mt-5 text-[11px] font-medium uppercase tracking-[0.34em] text-gold">
             {a.brand}
           </motion.p>
-          <RevealText as="h2" text={a.name} inView={false} delay={0.25} className="mt-2 font-serif text-[clamp(2.2rem,3.9vw,3.2rem)] font-normal leading-[1.02] tracking-[-0.01em]" />
+          <RevealText as="h2" text={a.name} inView={false} ink inkTime={3} delay={0.25} className="mt-2 font-serif text-[clamp(2.2rem,3.9vw,3.2rem)] font-normal leading-[1.02] tracking-[-0.01em]" />
           {d?.conc && (
             <motion.p variants={rise} className="mt-1 font-serif text-base italic text-soft">
               {d.conc}

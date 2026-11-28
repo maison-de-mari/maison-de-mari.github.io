@@ -2,10 +2,11 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef } from "react";
-import { smearTargets } from "@/lib/smear";
+import { addSmearTarget, removeSmearTarget } from "@/lib/smear";
 
 /**
- * Текст проявляется по буквам, как на immersive-g.com: буквы по очереди слева направо выплывают
+ * Крупные заголовки (от 20 px), появляющиеся на экране, рисует heading-smear.tsx — «чернилами», как главный
+ * заголовок immersive-g.com. Остальной текст (и запасной вариант) проявляется по буквам: буквы по очереди слева направо выплывают
  * из прозрачности, и каждая начинает раньше, чем закончилась предыдущая, — мягкая волна света по строке.
  * Только прозрачность, без сдвигов. Срабатывает, когда текст попадает на экран (один раз),
  * или сразу при монтировании (inView=false). Для экранного диктора — весь текст целиком (aria-label).
@@ -19,12 +20,16 @@ type Props = {
   stagger?: number;
   /** запускать при появлении на экране (true) или сразу при монтировании (false) */
   inView?: boolean;
+  /** появление «чернилами» и для текста, который появляется при монтировании (названия ароматов) */
+  ink?: boolean;
+  /** длительность «чернил», с (по умолчанию 4, как у immersive-g) */
+  inkTime?: number;
 };
 
 /** доля общего времени, на которую буква «перекрывает» следующие (как fadeDurationOffset у них) */
 const OVERLAP = 0.2;
 
-export function RevealText({ text, className = "", as = "span", delay = 0, inView = true }: Props) {
+export function RevealText({ text, className = "", as = "span", delay = 0, inView = true, ink = false, inkTime }: Props) {
   const reduce = useReducedMotion();
   const Tag = motion[as];
   // крупные заголовки курсор «размазывает» (heading-smear.tsx)
@@ -32,10 +37,8 @@ export function RevealText({ text, className = "", as = "span", delay = 0, inVie
   useEffect(() => {
     const n = el.current;
     if (!n) return;
-    smearTargets.add(n);
-    return () => {
-      smearTargets.delete(n);
-    };
+    addSmearTarget(n);
+    return () => removeSmearTarget(n);
   }, []);
   const words = text.split(" ");
   const n = Math.max(1, text.replace(/\s/g, "").length);
@@ -43,7 +46,15 @@ export function RevealText({ text, className = "", as = "span", delay = 0, inVie
   const total = Math.min(2.4, 0.55 + n * 0.04);
   let i = 0;
   return (
-    <Tag ref={el as React.Ref<never>} className={className} aria-label={text}>
+    <Tag
+      ref={el as React.Ref<never>}
+      className={className}
+      aria-label={text}
+      // крупные заголовки, появляющиеся на экране, рисует «чернилами» heading-smear.tsx (буквы ниже — запасной вариант)
+      data-ink={(inView || ink) && !reduce ? "" : undefined}
+      data-ink-delay={delay || undefined}
+      data-ink-time={inkTime}
+    >
       {words.map((w, wi) => (
         <span key={`${w}-${wi}`} aria-hidden className="whitespace-nowrap">
           {Array.from(w).map((ch, ci) => {

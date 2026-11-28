@@ -360,7 +360,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
             <ChevronLeft className="size-4" strokeWidth={1.8} /> К витрине
           </button>
           <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-gold">{a.brand}</p>
-          <RevealText as="h2" text={a.name} inView={false} delay={0.2} stagger={0.1} className="mt-2 font-serif text-[clamp(2.2rem,4.4vw,3.2rem)] font-light leading-[1.02]" />
+          <RevealText as="h2" text={a.name} inView={false} ink inkTime={3} delay={0.2} stagger={0.1} className="mt-2 font-serif text-[clamp(2.2rem,4.4vw,3.2rem)] font-light leading-[1.02]" />
           {d && <p className="mt-2 text-sm text-soft">{d.family.ru}</p>}
           <p className="mt-4 max-w-[54ch] text-[16px] leading-relaxed text-ink/85">{a.description.ru}</p>
 
