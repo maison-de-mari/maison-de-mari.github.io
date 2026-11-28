@@ -87,3 +87,13 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* отражения флаконов: маска с префиксом -webkit- — без него Safari на iPhone показывал перевёрнутый флакон целиком */
+.refl-shelf {
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+.refl-page {
+  -webkit-mask-image: linear-gradient(to top, black, transparent 80%);
+  mask-image: linear-gradient(to top, black, transparent 80%);
+}

@@ -170,16 +170,20 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                                 draggable={false}
                                 className="absolute inset-0 size-full object-contain object-bottom"
                               />
-                              {/* отражение в верхней плоскости стекла: картинка перевёрнута — маска тоже, поэтому «to_top» (видна полоска у стекла) */}
-                              {/* eslint-disable-next-line @next/next/no-img-element -- то же фото, отражённое */}
-                              <img
-                                src={thumb(a.slug)}
-                                alt=""
-                                loading="lazy"
-                                decoding="async"
-                                draggable={false}
-                                className="pointer-events-none absolute inset-x-0 top-full h-full w-full -scale-y-100 object-contain object-bottom opacity-25 [mask-image:linear-gradient(to_top,black,transparent_9%)]"
-                              />
+                              {/* отражение в стекле полки: узкая полоска под флаконом — обрезана рамкой (надёжно и в Safari) и тает вниз */}
+                              <span aria-hidden className="refl-shelf pointer-events-none absolute inset-x-0 top-full h-[9%] overflow-hidden opacity-25">
+                                {/* eslint-disable-next-line @next/next/no-img-element -- то же фото, отражённое */}
+                                <img
+                                  src={thumb(a.slug)}
+                                  alt=""
+                                  loading="lazy"
+                                  decoding="async"
+                                  draggable={false}
+                                  // низ флакона — у верхнего края полоски; переворот вокруг этого края — отражение уходит вниз
+                                  className="absolute inset-x-0 bottom-full h-[1111%] w-full object-contain object-bottom"
+                                  style={{ transformOrigin: "50% 100%", transform: "scaleY(-1)" }}
+                                />
+                              </span>
                             </motion.button>
                           )}
                         </li>
@@ -441,7 +445,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.14, transition: { duration: 0.8, delay: 0.5 } }}
               exit={{ opacity: 0, transition: { duration: 0.15 } }}
-              className="pointer-events-none absolute left-0 top-full h-[16%] w-full -scale-y-100 [mask-image:linear-gradient(to_top,black,transparent_80%)]"
+              className="refl-page pointer-events-none absolute left-0 top-full h-[16%] w-full -scale-y-100 overflow-hidden"
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- то же фото, отражённое */}
               <img src={img(a.slug, "front")} alt="" draggable={false} className="absolute bottom-0 left-0 h-[625%] w-full object-contain object-bottom" />

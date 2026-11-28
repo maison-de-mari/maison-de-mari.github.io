@@ -224,7 +224,13 @@ export function HeadingSmear() {
       c.height = Math.ceil((box.height + PAD * 2) * dpr);
       const x = c.getContext("2d")!;
       x.scale(dpr, dpr);
-      if (blur) x.filter = `blur(${blur}px)`;
+      // размытие — через тень (ctx.filter в Safari нет): буквы рисуем далеко левее, а их размытую тень — на место
+      const OFF = blur ? 20000 : 0;
+      if (blur) {
+        x.shadowColor = "#fff";
+        x.shadowBlur = blur * 2 * dpr; // тень не масштабируется вместе с холстом
+        x.shadowOffsetX = OFF * dpr;
+      }
       x.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
       x.fillStyle = "#fff";
       x.textBaseline = "alphabetic";
@@ -234,7 +240,7 @@ export function HeadingSmear() {
         if (!ch.trim()) return;
         const b = s.getBoundingClientRect();
         if (b.right > box.right + 1) return; // спрятано многоточием
-        x.fillText(ch, b.left - box.left + PAD, b.top - box.top + PAD + asc);
+        x.fillText(ch, b.left - box.left + PAD - OFF, b.top - box.top + PAD + asc);
       });
       const t = new THREE.CanvasTexture(c);
       t.colorSpace = THREE.NoColorSpace;
@@ -302,8 +308,11 @@ export function HeadingSmear() {
       });
       if (!items.size) {
         r.clear();
+        // Safari не всегда показывает кадр, в котором только очистка, — копия «зависала» поверх страницы; прячем холст
+        cv.style.visibility = "hidden";
         return;
       }
+      cv.style.visibility = "visible";
       if (smearing) {
         const vx = mouse.px > -1e3 ? (mouse.x - mouse.px) / 40 : 0;
         const vy = mouse.py > -1e3 ? (mouse.y - mouse.py) / 40 : 0;
