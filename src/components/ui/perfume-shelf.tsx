@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { RevealText } from "./reveal-text";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useReducedMotion, useTransform, type MotionValue } from "framer-motion";
-import { ChevronDown, ChevronLeft, Minus, Plus } from "lucide-react";
+import { ChevronLeft, Minus, Plus } from "lucide-react";
 import { aromas as ALL, FRONT_ONLY, minSum, minUsd, type AromaWithImages } from "@/data/aromas";
 import { DETAILS, NOTE, type Note } from "@/data/notes";
 import { MOODS, MOOD_OF, type Mood } from "@/data/moods";
@@ -90,14 +90,18 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
       mm.add(MOTION_OK, () => {
         gsap.utils.toArray<HTMLElement>("[data-shelf-row]").forEach((row) => {
           const tl = gsap.timeline({ scrollTrigger: { trigger: row, start: "top 88%", once: true } });
-          tl.from(row.querySelectorAll("[data-shelf-bottle]"), { y: 70, autoAlpha: 0, duration: 1, ease: "power3.out", stagger: 0.09 })
-            .from(row.querySelectorAll("[data-shelf-label]"), { y: 14, autoAlpha: 0, duration: 0.7, ease: "power2.out", stagger: 0.06 }, 0.3)
+          // тихо: сначала стекло полки прочерчивается от центра к краям, затем флаконы проступают из лёгкой дымки
+          // и чуть опускаются на стекло (от центра полки к краям), по стеклу проходит блик, последними — подписи
+          const bottles = gsap.utils.toArray<HTMLElement>(row.querySelectorAll("[data-shelf-bottle]"));
+          tl.from(row.querySelector("[data-shelf-glass]"), { scaleX: 0, transformOrigin: "50% 50%", duration: 1.3, ease: "expo.out" })
+            .from(bottles, { y: -14, autoAlpha: 0, filter: "blur(8px)", duration: 1.6, ease: "expo.out", stagger: { each: 0.14, from: "center" }, clearProps: "filter" }, 0.25)
             .fromTo(
               row.querySelector("[data-shelf-glint]"),
               { xPercent: -120, autoAlpha: 1 },
-              { xPercent: 950, duration: 1.3, ease: "power2.inOut", onComplete: function () { gsap.set(this.targets(), { autoAlpha: 0 }); } },
-              0.15,
-            );
+              { xPercent: 950, duration: 1.8, ease: "sine.inOut", onComplete: function () { gsap.set(this.targets(), { autoAlpha: 0 }); } },
+              0.7,
+            )
+            .from(row.querySelectorAll("[data-shelf-label]"), { autoAlpha: 0, y: 6, duration: 1.1, ease: "power2.out", stagger: { each: 0.12, from: "center" } }, 0.85);
           gsap.fromTo(row, { y: 34 }, { y: -34, ease: "none", scrollTrigger: { trigger: row, start: "top bottom", end: "bottom top", scrub: true } });
         });
       });
@@ -212,7 +216,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
 function GlassShelf() {
   const brass = "bg-[linear-gradient(to_right,#7d5f2e,#e9cf98_45%,#b48c4c_60%,#7d5f2e)]";
   return (
-    <div aria-hidden className="relative -mt-[9px] h-[22px]">
+    <div aria-hidden data-shelf-glass className="relative -mt-[9px] h-[22px]">
       {/* блик, который пробегает по стеклу, когда полка появляется (GSAP) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[21px] overflow-hidden rounded-[3px]">
         <div data-shelf-glint className="invisible absolute inset-y-0 left-0 w-[12%] skew-x-[-30deg] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.95),transparent)]" />
@@ -247,6 +251,20 @@ function GlassShelf() {
 }
 
 // ───────────────────────── страница аромата
+
+// проявление строк правой части: по очереди, из лёгкой дымки; линии прочерчиваются слева направо
+const pageList = {
+  hidden: { transition: { staggerChildren: 0.03, staggerDirection: -1 } },
+  show: { transition: { delayChildren: 0.25, staggerChildren: 0.09 } },
+};
+const pageItem = {
+  hidden: { opacity: 0, y: 12, filter: "blur(6px)", transition: { duration: 0.2 } },
+  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.9, ease: [0.22, 1, 0.36, 1] as const } },
+};
+const pageLine = {
+  hidden: { scaleX: 0, transition: { duration: 0.2 } },
+  show: { scaleX: 1, transition: { duration: 1.2, ease: [0.22, 1, 0.36, 1] as const } },
+};
 
 /** цвет ауры — средний цвет флакона на фото, насыщеннее и светлее; пока не посчитан — золото */
 function useAura(slug: string) {
@@ -343,22 +361,25 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
       ? ([
           [
             "Ноты",
-            <dl key="n" className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+            <ul key="n" className="flex flex-col gap-3">
               {(
                 [
-                  ["Верх", d.top],
-                  ["Сердце", d.heart],
-                  ["База", d.base],
+                  ["Верх", d.top, 10],
+                  ["Сердце", d.heart, 17],
+                  ["База", d.base, 24],
                 ] as const
               )
                 .filter(([, list]) => list.length)
-                .map(([k, list]) => (
-                  <div key={k} className="contents">
-                    <dt className="text-[10px] font-medium uppercase tracking-[0.24em] text-soft self-center">{k}</dt>
-                    <dd>{notes(list)}</dd>
-                  </div>
+                .map(([k, list, w]) => (
+                  <li key={k} className="grid grid-cols-[26px_5.2rem_1fr] items-baseline gap-x-2">
+                    <span aria-hidden className="flex justify-center self-center">
+                      <span className="h-[3px] rounded-full bg-gold/75" style={{ width: w }} />
+                    </span>
+                    <span className="text-[10px] font-medium uppercase tracking-[0.26em] text-soft">{k}</span>
+                    <span className="font-serif text-[16px] text-ink">{notes(list)}</span>
+                  </li>
                 ))}
-            </dl>,
+            </ul>,
           ],
           ["Когда носить", <p key="w">{d.wear.ru}</p>],
         ] as [string, React.ReactNode][])
@@ -433,101 +454,129 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
           <p className="relative mt-[5vh] font-serif text-[15px] italic text-soft md:mt-[11vh]">Потяните, чтобы повернуть</p>
         </div>
 
-        <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }} transition={{ ...SPRING, delay: 0.05 }} className="relative z-20">
-          <button
+        {/* правая часть — тихий «паспорт» аромата: строки проявляются по очереди из лёгкой дымки, золотые линии прочерчиваются */}
+        <motion.div variants={pageList} initial="hidden" animate="show" exit="hidden" className="relative z-20 flex flex-col">
+          <motion.button
+            variants={pageItem}
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="-ml-1.5 mb-6 inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium uppercase tracking-[0.24em] text-soft transition-colors hover:text-ink"
+            className="group -ml-1 mb-8 inline-flex min-h-11 items-center gap-2 self-start px-1 text-[11px] font-medium uppercase tracking-[0.26em] text-soft transition-colors hover:text-ink"
           >
-            <ChevronLeft className="size-4" strokeWidth={1.8} /> К витрине
-          </button>
-          <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-gold">{a.brand}</p>
-          <RevealText as="h2" text={a.name} inView={false} ink inkTime={3} delay={0.2} stagger={0.1} className="mt-2 font-serif text-[clamp(2.2rem,4.4vw,3.2rem)] font-light leading-[1.02]" />
-          {d && <p className="mt-2 text-sm text-soft">{d.family.ru}</p>}
-          <p className="mt-4 max-w-[54ch] text-[16px] leading-relaxed text-ink/85">{a.description.ru}</p>
+            <ChevronLeft className="size-4 transition-transform duration-300 group-hover:-translate-x-1" strokeWidth={1.5} /> К витрине
+          </motion.button>
+
+          <motion.p variants={pageItem} className="text-[11px] font-medium uppercase tracking-[0.36em] text-gold">
+            {a.brand}
+          </motion.p>
+          <RevealText as="h2" text={a.name} inView={false} ink inkTime={3} delay={0.3} className="mt-3 font-serif text-[clamp(2.4rem,4.6vw,3.6rem)] font-normal leading-[1.02] tracking-[-0.01em]" />
+          {(d?.conc || d) && (
+            <motion.p variants={pageItem} className="mt-2 font-serif text-[17px] italic text-soft">
+              {[d?.conc, d?.family.ru].filter(Boolean).join(" · ")}
+            </motion.p>
+          )}
+
+          <motion.span variants={pageLine} aria-hidden className="mt-7 block h-px w-full origin-left bg-[linear-gradient(to_right,var(--color-gold),color-mix(in_srgb,var(--color-gold)_10%,transparent))] opacity-60" />
+
+          <motion.p variants={pageItem} className="mt-6 max-w-[50ch] font-serif text-[18px] italic leading-relaxed text-ink/80">
+            {a.description.ru}
+          </motion.p>
 
           {variant ? (
             <>
-              <fieldset className="mt-7">
-                <legend className="mb-2.5 text-[10px] font-medium uppercase tracking-[0.24em] text-soft">Распив</legend>
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                  {variants.map((x, i) => {
-                    const on = i === v;
-                    return (
-                      <label
-                        key={x.label}
-                        className={`flex cursor-pointer items-center justify-between rounded-xl border bg-card/80 px-4 py-3 text-[14px] transition-[border-color,box-shadow] duration-150 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-gold ${
-                          on ? "border-ink shadow-[0_0_0_1px_var(--color-ink)]" : "border-[#ddd5ca] hover:border-soft"
-                        }`}
-                      >
-                        <input type="radio" name="vol" checked={on} onChange={() => setV(i)} className="sr-only" />
-                        <span className="font-medium">{x.label}</span>
-                        <span className="text-soft tabular-nums">{sum(x.price)}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
+              {/* объём — строки, а не кнопки: выбранная подчёркнута золотом, подчёркивание переезжает */}
+              <motion.div variants={pageItem} role="radiogroup" aria-label="Объём распива" className="mt-9 flex flex-wrap gap-x-8 gap-y-3">
+                {variants.map((x, i) => {
+                  const on = i === v;
+                  return (
+                    <button
+                      key={x.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setV(i)}
+                      className={`relative pb-2 text-left transition-colors duration-300 ${on ? "text-ink" : "text-soft hover:text-ink"}`}
+                    >
+                      <span className="block text-[10px] font-medium uppercase tracking-[0.26em]">Распив · {x.label}</span>
+                      <span className="mt-1 block font-serif text-[22px] tabular-nums">{sum(x.price)}</span>
+                      {on && <motion.span layoutId={`vol-line-${a.slug}`} className="absolute inset-x-0 bottom-0 h-px bg-gold" transition={{ type: "spring", bounce: 0.15, duration: 0.5 }} />}
+                    </button>
+                  );
+                })}
+              </motion.div>
 
-              <div className="mt-6 flex items-stretch gap-3">
-                <div className="flex items-center rounded-xl border border-ink/15 bg-card/80">
-                  <button type="button" aria-label="Меньше" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty === 1} className="grid h-full w-11 place-items-center rounded-l-xl disabled:text-[#d6cec3]">
-                    <Minus className="size-4" />
+              <motion.div variants={pageItem} className="mt-8 flex items-center gap-5">
+                <div className="flex items-center gap-1 text-ink" aria-label="Количество">
+                  <button type="button" aria-label="Меньше" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty === 1} className="grid size-10 place-items-center rounded-full text-ink/70 transition-colors hover:text-ink disabled:text-ink/20">
+                    <Minus className="size-4" strokeWidth={1.4} />
                   </button>
-                  <span className="w-7 text-center tabular-nums" aria-live="polite">{qty}</span>
-                  <button type="button" aria-label="Больше" onClick={() => setQty((q) => Math.min(9, q + 1))} className="grid h-full w-11 place-items-center rounded-r-xl">
-                    <Plus className="size-4" />
+                  <span className="w-6 text-center font-serif text-[20px] tabular-nums" aria-live="polite">
+                    {qty}
+                  </span>
+                  <button type="button" aria-label="Больше" onClick={() => setQty((q) => Math.min(9, q + 1))} className="grid size-10 place-items-center rounded-full text-ink/70 transition-colors hover:text-ink">
+                    <Plus className="size-4" strokeWidth={1.4} />
                   </button>
                 </div>
                 <button
                   type="button"
                   onClick={add}
-                  className={`h-12 flex-1 rounded-full text-xs font-semibold uppercase tracking-[0.2em] transition-[filter,transform] active:scale-[0.98] ${
-                    inCart ? "bg-card text-gold ring-1 ring-gold/60" : "bg-[linear-gradient(180deg,#c9a463,#9a7438)] text-white hover:brightness-110"
+                  className={`group relative h-[52px] flex-1 overflow-hidden rounded-full text-[11px] font-medium uppercase tracking-[0.28em] transition-[color,box-shadow] duration-500 ${
+                    inCart ? "text-gold ring-1 ring-gold/60" : "bg-ink text-night hover:text-ink"
                   }`}
                 >
-                  <span aria-live="polite">{inCart ? "В корзине" : `В корзину · ${sum(variant.price * qty)}`}</span>
+                  {/* золото заливает кнопку снизу при наведении */}
+                  {!inCart && <span aria-hidden className="absolute inset-0 translate-y-full bg-[linear-gradient(180deg,#d4b072,#a57d3c)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-y-0" />}
+                  <span className="relative" aria-live="polite">
+                    {inCart ? "В корзине" : `В корзину · ${sum(variant.price * qty)}`}
+                  </span>
                 </button>
-              </div>
+              </motion.div>
             </>
           ) : (
-            <div className="mt-7">
-              <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-soft">{a.ask ? "Распив и флакон" : "Флакон под заказ"}</p>
-              <p className="mt-1 text-2xl font-light tabular-nums">
-                {a.ask ? "Цена по запросу" : a.usd?.map((u) => `${u.label} — ${u.usd} $`).join(" · ")}
-              </p>
-              <a href={TG} target="_blank" rel="noopener" className="mt-4 inline-flex h-12 items-center rounded-full bg-[linear-gradient(180deg,#c9a463,#9a7438)] px-7 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:brightness-110">
-                Заказать в Telegram
+            <motion.div variants={pageItem} className="mt-9">
+              <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-soft">{a.ask ? "Распив и флакон" : "Флакон под заказ"}</p>
+              <p className="mt-1 font-serif text-[28px] tabular-nums">{a.ask ? "Цена по запросу" : a.usd?.map((u) => `${u.label} — ${u.usd} $`).join(" · ")}</p>
+              <a
+                href={TG}
+                target="_blank"
+                rel="noopener"
+                className="group relative mt-6 inline-flex h-[52px] items-center overflow-hidden rounded-full bg-ink px-9 text-[11px] font-medium uppercase tracking-[0.28em] text-night transition-colors duration-500 hover:text-ink"
+              >
+                <span aria-hidden className="absolute inset-0 translate-y-full bg-[linear-gradient(180deg,#d4b072,#a57d3c)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-y-0" />
+                <span className="relative">Заказать в Telegram</span>
               </a>
-            </div>
+            </motion.div>
           )}
           {a.bottle && (
-            <p className="mt-4 text-sm text-soft">
-              Полный флакон под заказ: <span className="text-ink/90">{a.bottle}</span>
-            </p>
+            <motion.p variants={pageItem} className="mt-5 font-serif text-[15px] italic text-soft">
+              Полный флакон под заказ — <span className="not-italic text-ink/85">{a.bottle}</span>
+            </motion.p>
           )}
 
-          <div className="mt-8 border-t border-[#ddd5ca]">
+          {/* разделы: заголовки шрифтом Times, тонкие линии, плюс превращается в минус */}
+          <motion.div variants={pageItem} className="mt-10">
             {sections.map(([title, body]) => {
               const isOpen = section === title;
               return (
-                <div key={title} className="border-b border-[#ddd5ca]">
-                  <button type="button" aria-expanded={isOpen} onClick={() => setSection(isOpen ? null : title)} className="flex min-h-12 w-full items-center justify-between py-3 text-left text-[12px] font-medium uppercase tracking-[0.22em]">
+                <div key={title} className="border-t border-ink/10 last:border-b">
+                  <button type="button" aria-expanded={isOpen} onClick={() => setSection(isOpen ? null : title)} className="flex min-h-14 w-full items-center justify-between py-3 text-left font-serif text-[19px]">
                     {title}
-                    <ChevronDown className={`size-4 text-soft transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+                    <span aria-hidden className="relative size-3.5">
+                      <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ink/60" />
+                      <span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-ink/60 transition-transform duration-500 ${isOpen ? "scale-y-0" : ""}`} />
+                    </span>
                   </button>
                   <AnimatePresence initial={false}>
                     {isOpen && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={SPRING} className="overflow-hidden">
-                        <div className="pb-5 text-[15px] leading-relaxed text-ink/80">{body}</div>
+                        <div className="pb-6 text-[15px] leading-relaxed text-ink/80">{body}</div>
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               );
             })}
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </motion.div>
