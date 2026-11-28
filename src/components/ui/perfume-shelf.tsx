@@ -166,7 +166,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                                 draggable={false}
                                 className="absolute inset-0 size-full object-contain object-bottom"
                               />
-                              {/* отражение в верхней плоскости стекла */}
+                              {/* отражение в верхней плоскости стекла: картинка перевёрнута — маска тоже, поэтому «to_top» (видна полоска у стекла) */}
                               {/* eslint-disable-next-line @next/next/no-img-element -- то же фото, отражённое */}
                               <img
                                 src={thumb(a.slug)}
@@ -174,7 +174,7 @@ export function PerfumeShelf({ items = ALL }: { items?: AromaWithImages[] }) {
                                 loading="lazy"
                                 decoding="async"
                                 draggable={false}
-                                className="pointer-events-none absolute inset-x-0 top-full h-full w-full -scale-y-100 object-contain object-bottom opacity-25 [mask-image:linear-gradient(to_bottom,black,transparent_7%)]"
+                                className="pointer-events-none absolute inset-x-0 top-full h-full w-full -scale-y-100 object-contain object-bottom opacity-25 [mask-image:linear-gradient(to_top,black,transparent_9%)]"
                               />
                             </motion.button>
                           )}
