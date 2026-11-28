@@ -4,6 +4,7 @@ import { ReliefPaper } from "@/components/ui/relief-paper";
 import { Snow } from "@/components/ui/snow";
 import { SiteNav } from "@/components/ui/site-nav";
 import { CursorGlow } from "@/components/ui/cursor-glow";
+import { HeadingSmear } from "@/components/ui/heading-smear";
 import type { RingSpec } from "@/components/ui/glass-showcase/glass-ring";
 import { getAroma, type AromaWithImages } from "@/data/aromas";
 import { GLASS_RING } from "@/data/glass-ring";
@@ -31,6 +32,7 @@ export default function Home() {
       <PerfumeShelf />
       <Snow />
       <CursorGlow />
+      <HeadingSmear />
     </main>
   );
 }
