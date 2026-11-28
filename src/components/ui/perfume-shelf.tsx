@@ -248,14 +248,6 @@ function GlassShelf() {
 
 // ───────────────────────── страница аромата
 
-/** строка нот для орбиты: повторяем, пока не наберётся на весь круг */
-function orbitText(list: Note[]) {
-  const one = list.map((n) => NOTE[n][0]).join("  ·  ") + "  ·  ";
-  let s = one;
-  while (s.length < 120) s += one;
-  return s;
-}
-
 /** цвет ауры — средний цвет флакона на фото, насыщеннее и светлее; пока не посчитан — золото */
 function useAura(slug: string) {
   const [c, setC] = useState("rgba(201,164,99,0.55)");
@@ -305,10 +297,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
   const variant = variants[v];
   const inCart = !!variant && items.some((i) => i.slug === a.slug && i.label === variant.label);
   const closeRef = useRef<HTMLButtonElement>(null);
-  // орбита нот поворачивается вместе с флаконом (пятая часть его поворота)
-  const orbit = useTransform(spin, (s) => s * 72);
   const aura = useAura(a.slug);
-  const ring = d ? orbitText([...d.top, ...d.heart, ...d.base]) : "";
   const drag = useRef<{ x: number; v: number; samples: { x: number; t: number }[] } | null>(null);
 
   useEffect(() => {
@@ -381,59 +370,42 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
     <motion.div role="dialog" aria-modal="true" aria-label={`${a.brand} ${a.name}`} className="fixed inset-0 z-50 overflow-y-auto overflow-x-hidden overscroll-contain">
       <motion.div className="fixed inset-0 bg-night" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
       <div className="relative mx-auto grid min-h-full max-w-[1100px] grid-cols-1 items-center gap-8 px-5 pt-16 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14">
-        {/* сцена аромата: аура цвета аромата, огромное название контуром, орбита нот, светящийся подиум */}
+        {/* сцена аромата — тихо и изящно: едва заметное сияние цвета аромата, тонкая золотая дуга, светлая ниша и отражение */}
         <div className="relative flex flex-col items-center justify-center md:h-[calc(100dvh-7rem)]">
-          <motion.div
-            aria-hidden
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: { duration: 0.9, delay: 0.25 } }}
-            exit={{ opacity: 0, transition: { duration: 0.2 } }}
-            className="pointer-events-none absolute inset-0"
-          >
-            {/* название контуром — фоном, как на обложке журнала */}
-            <span
-              className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-serif text-[clamp(5rem,15vw,12rem)] leading-none text-transparent motion-safe:animate-[stage-drift_26s_ease-in-out_infinite_alternate]"
-              style={{ WebkitTextStroke: "1px color-mix(in srgb, var(--color-ink) 14%, transparent)" }}
-            >
-              {a.name}
-            </span>
-            {/* аура: мягкое пятно цвета аромата «дышит» */}
-            <span
-              className="absolute left-1/2 top-[47%] size-[min(82vw,600px)] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 blur-[48px] motion-safe:animate-[stage-breathe_7s_ease-in-out_infinite]"
-              style={{ background: `radial-gradient(circle, ${aura} 0%, color-mix(in srgb, ${aura} 45%, transparent) 45%, transparent 70%)` }}
-            />
-          </motion.div>
-
           <div className="relative">
-            {/* орбита нот: строка нот по кругу медленно вращается; флакон крутят — орбита поворачивается вместе */}
-            {ring && (
-              <motion.div
-                aria-hidden
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1, transition: { duration: 1.1, delay: 0.35, ease: [0.22, 1, 0.36, 1] } }}
-                exit={{ opacity: 0, transition: { duration: 0.2 } }}
-                style={{ rotate: orbit }}
-                className="pointer-events-none absolute left-1/2 top-[50%] aspect-square h-[104%] -translate-x-1/2 -translate-y-1/2"
-              >
-                <svg viewBox="0 0 400 400" className="size-full motion-safe:animate-[stage-orbit_80s_linear_infinite]">
-                  <defs>
-                    <path id={`orbit-${a.slug}`} d="M200,200 m-176,0 a176,176 0 1,1 352,0 a176,176 0 1,1 -352,0" />
-                  </defs>
-                  <circle cx="200" cy="200" r="190" fill="none" stroke="var(--color-gold)" strokeOpacity="0.28" strokeWidth="0.6" />
-                  <circle cx="200" cy="200" r="163" fill="none" stroke="var(--color-gold)" strokeOpacity="0.14" strokeWidth="0.6" strokeDasharray="1 5" />
-                  <text className="fill-soft text-[9.5px] uppercase" style={{ letterSpacing: "0.32em" }}>
-                    <textPath href={`#orbit-${a.slug}`} textLength={1105} lengthAdjust="spacing">
-                      {ring}
-                    </textPath>
-                  </text>
-                </svg>
-              </motion.div>
-            )}
+            {/* сияние: очень мягкое, цвет аромата едва угадывается */}
+            <motion.span
+              aria-hidden
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 1.2, delay: 0.3 } }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              className="pointer-events-none absolute left-1/2 top-[44%] aspect-square h-[82%] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[60px]"
+              style={{ background: `radial-gradient(circle, ${aura} 0%, transparent 68%)`, opacity: 0.45 }}
+            />
+            {/* арка-ниша: волосяная золотая линия, сверху — полукруг, как витринная ниша бутика */}
+            <motion.svg
+              aria-hidden
+              viewBox="0 0 200 300"
+              preserveAspectRatio="none"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 1, delay: 0.35 } }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              className="pointer-events-none absolute left-1/2 top-[-4%] h-[100%] w-[112%] -translate-x-1/2 overflow-visible"
+            >
+              <path
+                d="M8,300 L8,100 A92,92 0 0 1 192,100 L192,300"
+                fill="none"
+                stroke="var(--color-gold)"
+                strokeOpacity="0.5"
+                strokeWidth="0.6"
+                vectorEffect="non-scaling-stroke"
+              />
+            </motion.svg>
 
             <motion.div
               layoutId={`shelf-${a.slug}`}
               transition={SPRING}
-              className="relative z-10 aspect-[2/3] h-[42vh] cursor-grab touch-none select-none active:cursor-grabbing md:h-[58vh]"
+              className="relative z-10 aspect-[2/3] h-[42vh] cursor-grab touch-none select-none active:cursor-grabbing md:h-[56vh]"
               onPointerDown={onDown}
               onPointerMove={onMove}
               onPointerUp={onUp}
@@ -442,26 +414,23 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
               <TurnableBottle a={a} spin={spin} priority />
             </motion.div>
 
-            {/* подиум: светящийся эллипс с золотым ободком и мягкой тенью */}
+            {/* отражение флакона на глянцевом полу, быстро тает */}
             <motion.div
               aria-hidden
-              initial={{ opacity: 0, scaleX: 0.6 }}
-              animate={{ opacity: 1, scaleX: 1, transition: { duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] } }}
-              exit={{ opacity: 0, transition: { duration: 0.2 } }}
-              className="absolute bottom-0 left-1/2 h-[9%] w-[118%] -translate-x-1/2 translate-y-1/2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.14, transition: { duration: 0.8, delay: 0.5 } }}
+              exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              className="pointer-events-none absolute left-0 top-full h-[16%] w-full -scale-y-100 [mask-image:linear-gradient(to_top,black,transparent_80%)]"
             >
-              <span className="absolute inset-0 rounded-[50%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-ink)_22%,transparent),transparent)] blur-[6px]" />
-              <span className="absolute inset-x-[8%] inset-y-[18%] rounded-[50%] border border-gold/45 bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-card)_70%,transparent),transparent)]" />
+              {/* eslint-disable-next-line @next/next/no-img-element -- то же фото, отражённое */}
+              <img src={img(a.slug, "front")} alt="" draggable={false} className="absolute bottom-0 left-0 h-[625%] w-full object-contain object-bottom" />
             </motion.div>
+            {/* пол: тонкая линия и мягкая тень под флаконом */}
+            <span aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-[3%] w-[64%] -translate-x-1/2 translate-y-1/2 rounded-[50%] bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--color-ink)_20%,transparent),transparent)]" />
+            <span aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-px w-[150%] -translate-x-1/2 bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-gold)_55%,transparent),transparent)]" />
           </div>
 
-          <p className="relative mt-12 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-soft">
-            <svg aria-hidden viewBox="0 0 24 24" className="size-4 text-gold" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12a9 9 0 0 1 15.5-6.2M21 12a9 9 0 0 1-15.5 6.2" />
-              <path d="M18.5 2.5v3.3h-3.3M5.5 21.5v-3.3h3.3" />
-            </svg>
-            Потяните, чтобы повернуть
-          </p>
+          <p className="relative mt-[5vh] font-serif text-[15px] italic text-soft md:mt-[11vh]">Потяните, чтобы повернуть</p>
         </div>
 
         <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }} transition={{ ...SPRING, delay: 0.05 }} className="relative z-20">
