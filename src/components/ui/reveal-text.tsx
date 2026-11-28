@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { addSmearTarget, removeSmearTarget } from "@/lib/smear";
 
 /**
@@ -29,7 +29,15 @@ type Props = {
 /** доля общего времени, на которую буква «перекрывает» следующие (как fadeDurationOffset у них) */
 const OVERLAP = 0.2;
 
-export function RevealText({ text, className = "", as = "span", delay = 0, inView = true, ink = false, inkTime }: Props) {
+export function RevealText({
+  text,
+  className = "",
+  as = "span",
+  delay = 0,
+  inView = true,
+  ink = false,
+  inkTime,
+}: Props) {
   const reduce = useReducedMotion();
   const Tag = motion[as];
   // крупные заголовки курсор «размазывает» (heading-smear.tsx)
@@ -56,23 +64,35 @@ export function RevealText({ text, className = "", as = "span", delay = 0, inVie
       data-ink-time={inkTime}
     >
       {words.map((w, wi) => (
-        <span key={`${w}-${wi}`} aria-hidden className="whitespace-nowrap">
-          {Array.from(w).map((ch, ci) => {
-            const k = i++;
-            return (
-              <motion.span
-                key={ci}
-                data-ch
-                initial={reduce ? false : { opacity: 0 }}
-                {...(inView ? { whileInView: { opacity: 1 }, viewport: { once: true, amount: 0.5 } } : { animate: { opacity: 1 } })}
-                transition={{ duration: total * (1 / n + OVERLAP), delay: delay + (total * k) / n, ease: "linear" }}
-              >
-                {ch}
-              </motion.span>
-            );
-          })}
+        // пробел — снаружи «неразрывного» слова, иначе длинное название не переносится на новую строку
+        <Fragment key={`${w}-${wi}`}>
+          <span aria-hidden className="whitespace-nowrap">
+            {Array.from(w).map((ch, ci) => {
+              const k = i++;
+              return (
+                <motion.span
+                  key={ci}
+                  data-ch
+                  initial={reduce ? false : { opacity: 0 }}
+                  {...(inView
+                    ? {
+                        whileInView: { opacity: 1 },
+                        viewport: { once: true, amount: 0.5 },
+                      }
+                    : { animate: { opacity: 1 } })}
+                  transition={{
+                    duration: total * (1 / n + OVERLAP),
+                    delay: delay + (total * k) / n,
+                    ease: "linear",
+                  }}
+                >
+                  {ch}
+                </motion.span>
+              );
+            })}
+          </span>
           {wi < words.length - 1 ? " " : ""}
-        </span>
+        </Fragment>
       ))}
     </Tag>
   );
