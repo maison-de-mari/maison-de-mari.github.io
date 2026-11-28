@@ -383,7 +383,7 @@ function Card({ aroma: a, index, onClose, reduce }: { aroma: AromaWithImages; in
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.7, delay: reduce ? 0 : 0.7, ease: EASE } }}
         exit={{ opacity: 0, y: 12, filter: "blur(6px)", transition: { duration: 0.22 } }}
-        className="relative max-h-[inherit] overflow-y-auto overscroll-contain rounded-[22px] bg-card/90 shadow-[0_40px_90px_-40px_rgba(40,25,10,.55)] ring-1 ring-ink/10 backdrop-blur-xl"
+        className="no-scrollbar relative max-h-[inherit] overflow-y-auto overscroll-contain rounded-[22px] bg-card/90 shadow-[0_40px_90px_-40px_rgba(40,25,10,.55)] ring-1 ring-ink/10 backdrop-blur-xl"
       >
         {/* паспорт аромата: тонкая золотая рамка внутри карточки */}
         <div aria-hidden className="pointer-events-none absolute inset-2 rounded-[16px] ring-1 ring-gold/25" />

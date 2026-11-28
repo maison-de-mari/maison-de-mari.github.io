@@ -388,7 +388,7 @@ function AromaPage({ a, onClose }: { a: AromaWithImages; onClose: () => void }) 
   ];
 
   return (
-    <motion.div role="dialog" aria-modal="true" aria-label={`${a.brand} ${a.name}`} className="fixed inset-0 z-50 overflow-y-auto overflow-x-hidden overscroll-contain">
+    <motion.div role="dialog" aria-modal="true" aria-label={`${a.brand} ${a.name}`} className="no-scrollbar fixed inset-0 z-50 overflow-y-auto overflow-x-hidden overscroll-contain">
       <motion.div className="fixed inset-0 bg-night" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
       <div className="relative mx-auto grid min-h-full max-w-[1100px] grid-cols-1 items-center gap-8 px-5 pt-16 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14">
         {/* сцена аромата — тихо и изящно: едва заметное сияние цвета аромата, тонкая золотая дуга, светлая ниша и отражение */}

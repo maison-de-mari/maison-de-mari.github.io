@@ -79,3 +79,11 @@ body {
 }
 
 
+
+/* прокрутка без полосы прокрутки (карточка и окно аромата): листается колесом и пальцем, полоса не мешает */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
