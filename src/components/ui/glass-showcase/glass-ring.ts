@@ -692,8 +692,8 @@ export class GlassRing {
     this.camera.position.lerpVectors(this.base.pos, this.near.pos, f);
     this.look.lerpVectors(this.base.look, this.near.look, f);
     // появление: камера медленно опускается сверху — сначала видно кольцо воды почти в плане, потом витрина «встаёт»
-    if (this.introT >= 0 && this.introT < 4.2 && this.alive) {
-      const k = Math.min(1, this.introT / 4.2);
+    if (this.introT >= 0 && this.introT < 6.5 && this.alive) {
+      const k = Math.min(1, this.introT / 6.5);
       const e = k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
       this.cp.set(this.base.pos.x, this.base.pos.y + this.base.pos.length() * 0.9, this.base.pos.z * 0.45);
       this.camera.position.lerp(this.cp, 1 - e);
@@ -757,7 +757,7 @@ export class GlassRing {
       let show = 1; // проявление тени при появлении
       if (!x.landed) {
         const rank = Math.min(i, this.n - i);
-        const t = this.introT < 0 ? 0 : Math.min(1, Math.max(0, (this.introT - 0.9 - rank * 0.11) / 1.9));
+        const t = this.introT < 0 ? 0 : Math.min(1, Math.max(0, (this.introT - 1.2 - rank * 0.2) / 3.2));
         const e = 1 - (1 - t) ** 4;
         drop = -(1 - e) * HT * this.S * 1.08; // под водой
         show = e * e;
