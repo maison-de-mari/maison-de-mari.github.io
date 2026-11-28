@@ -47,7 +47,7 @@ export class GlassRing {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
   // spin — свой поворот флакона (крутят в крупном плане), spinV — его инерция; spread — насколько отодвинут в сторону
-  private bottles: { b: RingBottle; g: THREE.Group; box: THREE.Box3; spin: number; spinV: number; spread: number; lift: number; landed: boolean; under: { o: THREE.Object3D; y: number; m: THREE.Material | null; op: number }[] }[] = [];
+  private bottles: { b: RingBottle; g: THREE.Group; box: THREE.Box3; spin: number; spinV: number; spread: number; lift: number; landed: boolean; rose: boolean; refl: THREE.Mesh[]; under: { o: THREE.Object3D; y: number; m: THREE.Material | null; op: number }[] }[] = [];
   /** появление: флаконы по очереди спускаются сверху в воду (−1 — ещё не началось) */
   private introT = -1;
   private spinning = false; // тянут открытый флакон, а не кольцо
@@ -208,8 +208,8 @@ export class GlassRing {
         g.scale.setScalar(this.S);
         [...pb.scene.children].forEach((c) => g.add(c));
         this.scene.add(g);
-        this.living.mirror(g);
-        this.bottles.push({ b: pb, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0, lift: 0, landed: false, under: this.underOf(g) });
+        const refl = this.living.mirror(g);
+        this.bottles.push({ b: pb, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0, lift: 0, landed: false, rose: false, refl, under: this.underOf(g) });
         return;
       }
       let tex: THREE.Texture | undefined;
@@ -234,8 +234,8 @@ export class GlassRing {
       g.scale.setScalar(this.S);
       [...b.scene.children].forEach((c) => g.add(c));
       this.scene.add(g);
-      this.living.mirror(g);
-      this.bottles.push({ b, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0, lift: 0, landed: false, under: this.underOf(g) });
+      const refl = this.living.mirror(g);
+      this.bottles.push({ b, g, box: new THREE.Box3(), spin: 0, spinV: 0, spread: 0, lift: 0, landed: false, rose: false, refl, under: this.underOf(g) });
     });
 
     // «уменьшить движение» — флаконы сразу на местах
@@ -691,6 +691,14 @@ export class GlassRing {
     const f = this.focus * this.focus * (3 - 2 * this.focus);
     this.camera.position.lerpVectors(this.base.pos, this.near.pos, f);
     this.look.lerpVectors(this.base.look, this.near.look, f);
+    // появление: камера медленно опускается сверху — сначала видно кольцо воды почти в плане, потом витрина «встаёт»
+    if (this.introT >= 0 && this.introT < 4.2 && this.alive) {
+      const k = Math.min(1, this.introT / 4.2);
+      const e = k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
+      this.cp.set(this.base.pos.x, this.base.pos.y + this.base.pos.length() * 0.9, this.base.pos.z * 0.45);
+      this.camera.position.lerp(this.cp, 1 - e);
+      moving = true;
+    }
     if (pu > 0) {
       // камера перелетает над передним рядом и опускается в центр кольца, к самой воде, глядя на дальний флакон;
       // дальше — стоит в центре и поворачивается вслед за прокруткой
@@ -742,28 +750,33 @@ export class GlassRing {
           moving = true;
         } else if (this.sel !== i) x.spin = 0;
       }
-      // появление: сверху вниз по очереди от переднего флакона, с плавным поворотом; в конце — мягко в воду
+      // появление: флаконы медленно поднимаются из воды волной — от переднего в обе стороны к дальним;
+      // когда крышка прорезает воду — по ней расходится круг; без поворотов, тихо, как в бутике при открытии
       let drop = 0;
-      let twirl = 0;
+      const twirl = 0;
       let show = 1; // проявление тени при появлении
       if (!x.landed) {
         const rank = Math.min(i, this.n - i);
-        const t = this.introT < 0 ? 0 : Math.min(1, Math.max(0, (this.introT - 0.35 - rank * 0.085) / 1.5));
-        const e = 1 - (1 - t) ** 3;
-        drop = (1 - e) * 22;
-        twirl = (1 - e) * Math.PI * 1.5 * (i % 2 ? 1 : -1);
+        const t = this.introT < 0 ? 0 : Math.min(1, Math.max(0, (this.introT - 0.9 - rank * 0.11) / 1.9));
+        const e = 1 - (1 - t) ** 4;
+        drop = -(1 - e) * HT * this.S * 1.08; // под водой
         show = e * e;
+        // круг, когда флакон показался из воды (у тех, что спереди — задних не видно, а кругов в запасе немного)
+        if (!x.rose && t > 0.06) {
+          x.rose = true;
+          if (Math.cos(a) > -0.3) {
+            lv.place(a, 0, 0, this.q);
+            lv.ripple(this.q.x, this.q.z, 0.75);
+          }
+        }
         if (t >= 1) {
           x.landed = true;
           drop = 0;
           show = 1;
-          // круг — у тех, что спереди (задних не видно, а кругов в запасе ограниченное число)
-          if (Math.cos(a) > -0.3) {
-            lv.place(a, 0, 0, this.q);
-            lv.ripple(this.q.x, this.q.z, 0.85);
-          }
         } else moving = true;
       }
+      // отражение — только у того, что над водой (иначе под водой отражался бы «призрак»)
+      for (const r of x.refl) r.visible = x.landed || drop > -HT * this.S * 0.7;
       // флакон под мышкой приподнимается над водой (тень остаётся на воде и бледнеет)
       const wantLift = x.landed && this.hover?.i === i && this.sel === null && !this.down ? 1 : 0;
       x.lift += (wantLift - x.lift) * damp(wantLift ? 7 : 5);

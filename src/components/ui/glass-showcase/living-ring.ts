@@ -549,6 +549,7 @@ export class LivingRing {
 
   /** отражение: все непрозрачные части флакона, отзеркаленные под воду */
   mirror(root: THREE.Object3D) {
+    const made: THREE.Mesh[] = [];
     root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
@@ -559,7 +560,9 @@ export class LivingRing {
       dst.matrixWorldAutoUpdate = false;
       this.reflScene.add(dst);
       this.mirrors.push({ src: m, dst });
+      made.push(dst);
     });
+    return made;
   }
 
   /** scale — доля разрешения для отражения (0.5; в лёгком режиме меньше — вода его всё равно размывает) */
